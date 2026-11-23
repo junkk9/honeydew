@@ -20,6 +20,7 @@ use honeydew_audio::minisynth::MiniSynth;
 use honeydew_audio::soundfont::SoundFontPlayer;
 use honeydew_audio::stream::Rings;
 use honeydew_audio::supersaw::SuperSaw;
+use honeydew_audio::dewserum::DewSerum;
 use honeydew_audio::three_osc::ThreeOsc;
 use honeydew_audio::transistor_bass::TransistorBass;
 
@@ -54,6 +55,8 @@ fn instrument(
             )))
         }
         23 => Some(Box::new(SuperSaw::new(sample_rate))),
+        53 => Some(Box::new(DewSerum::new(sample_rate))),
+     
         33 => Some(Box::new(super::slicer::instrument(
             channel,
             module,
