@@ -1065,6 +1065,87 @@ const SOUNDFONT_PLAYER: &[P] = &[
     ),
 ];
 
+// ---- 53 DewSerum ----
+
+const DS_MOD_SOURCES: &[&str] = &[
+    "None", "LFO 1", "Env 1", "Env 2", "Velocity", "Key", "Mod Wheel",
+];
+const DS_MOD_DESTS: &[&str] = &[
+    "None", "A WT Pos", "B WT Pos", "Cutoff", "Resonance",
+    "A Pitch", "B Pitch", "A Level", "B Level", "A Detune", "B Detune",
+];
+const DS_LFO_BEATS: &[&str] = &[
+    "1/8", "1/4", "1/2", "3/4", "1/1", "2/1", "4/1", "8/1", "16/1", "32/1",
+];
+
+const DEWSERUM: &[P] = &[
+    P::ENABLE, // 0
+    P::plain("Osc A Level", 0.85), // 1
+    P::cont("Osc A WT Pos", 2.0 / 3.0, Display::Generic), // 2
+    P::cont("Osc A Pitch", 0.5, Display::Steps { min: -24, count: 49, fmt: Fmt::new(0, " st").sign(Sign::Positive) }), // 3
+    P::cont("Osc A Fine", 0.5, Display::linear(-100.0, 100.0, 0, " ct")), // 4
+    P::menu("Osc A Unison", 1.0 / 3.0, &["1", "2", "3", "4", "5", "6", "7"]), // 5
+    P::plain("Osc A Detune", 0.35), // 6
+    P::plain("Osc A Blend", 0.75), // 7
+    P::plain("Osc A Width", 0.6), // 8
+    P::plain("Osc B Level", 0.0), // 9
+    P::cont("Osc B WT Pos", 0.0, Display::Generic), // 10
+    P::cont("Osc B Pitch", 0.5, Display::Steps { min: -24, count: 49, fmt: Fmt::new(0, " st").sign(Sign::Positive) }), // 11
+    P::cont("Osc B Fine", 0.5, Display::linear(-100.0, 100.0, 0, " ct")), // 12
+    P::menu("Osc B Unison", 0.0, &["1", "2", "3", "4", "5", "6", "7"]), // 13
+    P::plain("Osc B Detune", 0.25), // 14
+    P::plain("Osc B Blend", 1.0), // 15
+    P::plain("Osc B Width", 0.5), // 16
+    P::menu("Filter Type", 0.0, &["LP", "HP", "BP"]), // 17
+    P::cont("Cutoff", 0.85, Display::Freq { min: 20.0, max: 20_480.0, hz_decimals: 0, khz_decimals: 2 }), // 18
+    P::plain("Resonance", 0.15), // 19
+    P::plain("Key Track", 0.0), // 20
+    P::plain("Env 1 Attack", 0.2), // 21
+    P::plain("Env 1 Decay", 0.5), // 22
+    P::plain("Env 1 Sustain", 0.8), // 23
+    P::plain("Env 1 Release", 0.4), // 24
+    P::plain("Env 2 Attack", 0.0), // 25
+    P::plain("Env 2 Decay", 0.5), // 26
+    P::plain("Env 2 Sustain", 0.0), // 27
+    P::plain("Env 2 Release", 0.5), // 28
+    P::cont("LFO Rate", 0.5, LFO_RATE), // 29
+    P::menu("LFO Mode", 0.0, &["Hertz", "Sync"]), // 30
+    P::menu("LFO Beat", 0.5, DS_LFO_BEATS), // 31
+    P::menu("Slot 1 Src", 0.0, DS_MOD_SOURCES), // 32
+    P::menu("Slot 1 Dest", 0.0, DS_MOD_DESTS), // 33
+    P::cont("Slot 1 Depth", 0.5, AMOUNT_1), // 34
+    P::menu("Slot 2 Src", 0.0, DS_MOD_SOURCES), // 35
+    P::menu("Slot 2 Dest", 0.0, DS_MOD_DESTS), // 36
+    P::cont("Slot 2 Depth", 0.5, AMOUNT_1), // 37
+    P::menu("Slot 3 Src", 0.0, DS_MOD_SOURCES), // 38
+    P::menu("Slot 3 Dest", 0.0, DS_MOD_DESTS), // 39
+    P::cont("Slot 3 Depth", 0.5, AMOUNT_1), // 40
+    P::menu("Slot 4 Src", 0.0, DS_MOD_SOURCES), // 41
+    P::menu("Slot 4 Dest", 0.0, DS_MOD_DESTS), // 42
+    P::cont("Slot 4 Depth", 0.5, AMOUNT_1), // 43
+    P::plain("Master", 0.7), // 44
+    P::menu("Voices", 1.0, &["1", "2", "3", "4", "5", "6", "7", "8"]), // 45
+    P::plain("LFO Points", 0.2), // 46
+    P::plain("LFO P0 X", 0.0), P::plain("LFO P0 Y", 0.5),
+    P::plain("LFO P1 X", 0.25), P::plain("LFO P1 Y", 1.0),
+    P::plain("LFO P2 X", 0.75), P::plain("LFO P2 Y", 0.0),
+    P::plain("LFO P3 X", 1.0), P::plain("LFO P3 Y", 0.5),
+    P::plain("LFO P4 X", 1.0), P::plain("LFO P4 Y", 0.5),
+    P::plain("LFO P5 X", 1.0), P::plain("LFO P5 Y", 0.5),
+    P::plain("LFO P6 X", 1.0), P::plain("LFO P6 Y", 0.5),
+    P::plain("LFO P7 X", 1.0), P::plain("LFO P7 Y", 0.5),
+    P::plain("LFO P8 X", 1.0), P::plain("LFO P8 Y", 0.5),
+    P::plain("LFO P9 X", 1.0), P::plain("LFO P9 Y", 0.5),
+    P::plain("LFO P10 X", 1.0), P::plain("LFO P10 Y", 0.5),
+    P::plain("LFO P11 X", 1.0), P::plain("LFO P11 Y", 0.5),
+    P::plain("LFO Bend 0", 0.5), P::plain("LFO Bend 1", 0.5),
+    P::plain("LFO Bend 2", 0.5), P::plain("LFO Bend 3", 0.5),
+    P::plain("LFO Bend 4", 0.5), P::plain("LFO Bend 5", 0.5),
+    P::plain("LFO Bend 6", 0.5), P::plain("LFO Bend 7", 0.5),
+    P::plain("LFO Bend 8", 0.5), P::plain("LFO Bend 9", 0.5),
+    P::plain("LFO Bend 10", 0.5),
+];
+
 pub static MODULES: &[ModuleSpec] = &[
     ModuleSpec::instrument(
         0,
@@ -1115,5 +1196,11 @@ pub static MODULES: &[ModuleSpec] = &[
         "SoundFont Player",
         SOUNDFONT_PLAYER,
         &[],
-    ),
+    ModuleSpec::instrument(
+    53,
+    "DewSerum",
+    "DewSerum",
+    DEWSERUM,
+    &["OSC A", "OSC B", "FILTER", "LFO", "MATRIX", "MASTER"],
+),    
 ];
