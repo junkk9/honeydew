@@ -1110,7 +1110,7 @@ const DEWSERUM: &[P] = &[
     P::plain("Env 2 Release", 0.5), // 28
     P::cont("LFO Rate", 0.5, LFO_RATE), // 29
     P::menu("LFO Mode", 0.0, &["Hertz", "Sync"]), // 30
-    P::menu("LFO Beat", 0.5, DS_LFO_BEATS), // 31
+    P::menu("LFO Beat", 4.0 / 9.0, DS_LFO_BEATS), // 31
     P::menu("Slot 1 Src", 0.0, DS_MOD_SOURCES), // 32
     P::menu("Slot 1 Dest", 0.0, DS_MOD_DESTS), // 33
     P::cont("Slot 1 Depth", 0.5, AMOUNT_1), // 34
