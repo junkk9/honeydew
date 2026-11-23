@@ -373,3 +373,9 @@ fn draw_lfo_editor(
 
     changed
 }
+#[cfg(test)]
+pub const REFERENCE: Reference = Reference {
+    size: [16.96, 6.49],
+    settings: &[],
+    cases: &[],
+};
