@@ -19,4 +19,5 @@ modules! {
     33 => slicer,
     39 => three_osc,
     52 => soundfont_player,
+    53 => dew_serum,
 }
