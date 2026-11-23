@@ -46,7 +46,7 @@ fn amplitude(frame: usize, h: usize) -> f64 {
         }
         // 8/π² · Σ (−1)^k sin((2k+1)θ) / (2k+1)²: peaks at +1 at θ = π/2. For odd h, k = (h − 1) / 2 = h / 2.
         1 if odd => {
-            let sign = if (h / 2) % 2 == 0 { 1.0 } else { -1.0 };
+            let sign = if (h / 2).is_multiple_of(2) { 1.0 } else { -1.0 };
             8.0 / (PI * PI) * sign / (h * h) as f64
         }
         // 2/π · Σ sin(hθ) / h: a falling saw, as SuperSaw's.
