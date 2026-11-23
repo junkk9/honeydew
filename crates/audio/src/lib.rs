@@ -8,6 +8,7 @@ mod comb;
 pub mod de_esser;
 pub mod denoise;
 pub mod device;
+pub mod dewserum;
 pub mod drums;
 pub mod dw_sampler;
 pub mod dwp;
