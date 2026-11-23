@@ -1196,11 +1196,12 @@ pub static MODULES: &[ModuleSpec] = &[
         "SoundFont Player",
         SOUNDFONT_PLAYER,
         &[],
+    ),
     ModuleSpec::instrument(
-    53,
-    "DewSerum",
-    "DewSerum",
-    DEWSERUM,
-    &["OSC A", "OSC B", "FILTER", "LFO", "MATRIX", "MASTER"],
-),    
+        53,
+        "DewSerum",
+        "DewSerum",
+        DEWSERUM,
+        &["OSC A", "OSC B", "FILTER", "LFO", "MATRIX", "MASTER"],
+    ),    
 ];
