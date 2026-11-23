@@ -434,6 +434,7 @@ impl Voice {
 
     /// Renders `n` ≤ [`TICK`] frames, adding into `mix`.
     fn render(&mut self, n: usize, c: &Control, mix: &mut [[f32; TICK]; 2]) {
+        #[allow(clippy::needless_range_loop)]
         for i in 0..n {
             let (mut l, mut r) = (0.0f32, 0.0f32);
             for o in 0..2 {
