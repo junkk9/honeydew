@@ -3,7 +3,7 @@ use honeydew_audio::dewserum::modulation::{
     CURVE_PARAMS, CurvePreset, LfoCurve, MAX_POINTS, lfo_preview,
 };
 use honeydew_audio::dewserum::wavetable::wave_preview;
-use honeydew_audio::dewserum::{ENV_COUNT, LFO_COUNT, param};
+use honeydew_audio::dewserum::{ENV_COUNT, FilterKind, LFO_COUNT, param};
 
 use crate::panels::build::*;
 use crate::ui::{UiCtx, widgets};
@@ -20,17 +20,22 @@ pub fn panel() -> Option<Panel> {
         tabs(0, "OSC A · OSC B · FILTER · ENV · LFO · MATRIX · MASTER").h(Size::U(1.35)),
         osc_page(10000, param::OSC_BASE[0usize], draw_wave_a).show(Show::Tab(0)),
         osc_page(20000, param::OSC_BASE[1usize], draw_wave_b).show(Show::Tab(1)),
-        vstack([
-            list(31100, "LP · HP · BP", Bar::Bottom)
-                .p(param::FILTER_TYPE)
-                .h(Size::U(1.4)),
-            hstack([
-                knob(31200, "Cutoff").p(param::CUTOFF),
-                knob(31300, "Resonance").p(param::RESONANCE),
-                knob(31400, "Key Track").p(param::KEY_TRACK),
-            ]),
-        ])
-        .show(Show::Tab(2)),
+      vstack([
+          list(31100, "LP 12 · LP 24 · HP 12 · HP 24 · BP 12 · Notch · Comb", Bar::Bottom)
+              .p(param::FILTER_TYPE)
+              .h(Size::U(1.35)),
+          display(31150)
+              .margins(0.2, 0.15, 0.2, 0.15)
+              .h(Size::U(4.6))
+              .draw(draw_filter_curve),
+          hstack([
+              knob(31200, "Cutoff").p(param::CUTOFF),
+              knob(31300, "Resonance").p(param::RESONANCE),
+              knob(31350, "Drive").p(param::FILTER_DRIVE),
+              knob(31400, "Key Track").p(param::KEY_TRACK),
+          ]),
+      ])
+      .show(Show::Tab(2)),
         env_page().show(Show::Tab(3)),
         lfo_page().show(Show::Tab(4)),
         matrix_page().show(Show::Tab(5)),
@@ -55,7 +60,7 @@ fn osc_page(id_base: u32, base: usize, draw_fn: Draw) -> Part {
         ])
         .h(Size::U(4.0)),
         hstack([
-            spinner(id_base + 400, "Pitch").p(base + param::PITCH),
+            knob(id_base + 400, "Pitch").p(base + param::PITCH),
             knob(id_base + 500, "Fine").p(base + param::FINE),
             spinner(id_base + 600, "Unison").p(base + param::UNISON),
             v_slider(id_base + 700, "Detune").p(base + param::DETUNE),
@@ -242,7 +247,7 @@ fn draw_matrix_pager(
         let b = widgets::Button {
             fill_on: ink,
             fill_off: fill,
-            text_on: fill,
+            text_on: text_col,
             text_off: Some(text_col),
             ..widgets::Button::new(id.with(("mat_pg", idx)), br, *label, active, colors)
         };
@@ -293,7 +298,7 @@ fn draw_env_editor(
         let b = widgets::Button {
             fill_on: ink,
             fill_off: fill,
-            text_on: fill,
+            text_on: text_col,
             text_off: Some(text_col),
             ..widgets::Button::new(id.with(("env_sel", idx)), br, *name, active, colors)
         };
@@ -434,7 +439,7 @@ fn draw_lfo_editor(
         let b = widgets::Button {
             fill_on: ink,
             fill_off: fill,
-            text_on: fill,
+            text_on: text_col,
             text_off: Some(text_col),
             ..widgets::Button::new(id.with(("lfo_sel", idx)), br, *name, active, colors)
         };
@@ -629,6 +634,145 @@ fn draw_lfo_editor(
         ui.painter()
             .circle_stroke(center, 6.5 * px, Stroke::new(1.5 * px, bg));
     }
+
+    changed
+}
+
+fn draw_filter_curve(
+    ui: &mut Ui,
+    cx: &UiCtx,
+    id: Id,
+    r: Rect,
+    module: &mut ModuleInstance,
+    _state: &mut PanelState,
+    ink: Color32,
+) -> Vec<usize> {
+    let (u, px) = (cx.m.u(1.0), 1.0 / cx.m.ppp());
+    let colors = &cx.theme.colors;
+    let fill = colors.control_fill.to_color32();
+    let bg = colors.background.to_color32();
+    let mut changed = Vec::new();
+
+    ui.painter().rect_filled(r, 4.0 * px, fill);
+    let inner = r.shrink(10.0 * px);
+    if inner.width() <= 6.0 || inner.height() <= 6.0 {
+        return changed;
+    }
+
+    // Frequency & dB grid
+    for k in 1..4 {
+        let gx = inner.left() + inner.width() * (k as f32 / 4.0);
+        ui.painter().vline(gx, inner.y_range(), Stroke::new(px, bg));
+    }
+    let zero_y = inner.top() + inner.height() * 0.36;
+    ui.painter().hline(inner.x_range(), zero_y, Stroke::new(px, bg));
+
+    let kind = FilterKind::from_param(module.params.get(param::FILTER_TYPE).copied().unwrap_or(0.0));
+    let mut cutoff = module.params.get(param::CUTOFF).copied().unwrap_or(0.85).clamp(0.0, 1.0);
+    let mut res = module.params.get(param::RESONANCE).copied().unwrap_or(0.15).clamp(0.0, 1.0);
+
+    // Interactive touch drag on filter response point (Cutoff = X, Resonance = Y)
+    let resp = ui.interact(r, id.with("flt_canvas"), Sense::drag());
+    let drag_id = id.with(("flt_drag", module.instance_id));
+    let mut dragging: bool = ui.data(|d| d.get_temp(drag_id)).unwrap_or(false);
+    let pointer_down = ui.input(|i| i.pointer.primary_down());
+    let pointer_pos = ui.input(|i| i.pointer.latest_pos());
+
+    let handle_now = pos2(
+        inner.left() + cutoff * inner.width(),
+        (zero_y - res * inner.height() * 0.30).clamp(inner.top() + 4.0 * px, inner.bottom() - 4.0 * px),
+    );
+
+    if pointer_down {
+        if let Some(pos) = pointer_pos {
+            if !dragging && resp.hovered() {
+                let origin = ui.input(|i| i.pointer.press_origin()).unwrap_or(pos);
+                if handle_now.distance(origin) <= 1.3 * u || r.contains(origin) {
+                    dragging = true;
+                }
+            }
+            if dragging {
+                cutoff = ((pos.x - inner.left()) / inner.width()).clamp(0.0, 1.0);
+                res = ((zero_y - pos.y) / (inner.height() * 0.30)).clamp(0.0, 1.0);
+            }
+        }
+    } else {
+        dragging = false;
+    }
+    ui.data_mut(|d| d.insert_temp(drag_id, dragging));
+
+    if (module.params[param::CUTOFF] - cutoff).abs() > 1e-5 {
+        module.params[param::CUTOFF] = cutoff;
+        changed.push(param::CUTOFF);
+    }
+    if (module.params[param::RESONANCE] - res).abs() > 1e-5 {
+        module.params[param::RESONANCE] = res;
+        changed.push(param::RESONANCE);
+    }
+
+    // Compute Serum-style frequency response curve across 128 log-frequency points
+    let fc_hz = 20.0 * 2f32.powf(10.0 * cutoff);
+    let q = 0.5 * 14f32.powf(res);
+    let mut pts = Vec::with_capacity(128);
+
+    for i in 0..128 {
+        let nx = i as f32 / 127.0;
+        let f_hz = 20.0 * 2f32.powf(10.0 * nx);
+        let ratio = f_hz / fc_hz.max(1.0);
+        let r2 = ratio * ratio;
+
+        let mag = match kind {
+            FilterKind::Lp12 => {
+                let denom = ((1.0 - r2).powi(2) + (ratio / q).powi(2)).sqrt();
+                1.0 / denom.max(1e-4)
+            }
+            FilterKind::Lp24 => {
+                let q2 = (0.5 * 6f32.powf(res)).max(0.5);
+                let single = ((1.0 - r2).powi(2) + (ratio / q2).powi(2)).sqrt();
+                1.0 / (single * single).max(1e-4)
+            }
+            FilterKind::Hp12 => {
+                let denom = ((1.0 - r2).powi(2) + (ratio / q).powi(2)).sqrt();
+                r2 / denom.max(1e-4)
+            }
+            FilterKind::Hp24 => {
+                let q2 = (0.5 * 6f32.powf(res)).max(0.5);
+                let single = ((1.0 - r2).powi(2) + (ratio / q2).powi(2)).sqrt();
+                (r2 * r2) / (single * single).max(1e-4)
+            }
+            FilterKind::Bp12 => {
+                let denom = ((1.0 - r2).powi(2) + (ratio / q).powi(2)).sqrt();
+                (ratio / q) / denom.max(1e-4)
+            }
+            FilterKind::Notch => {
+                let bw = (0.9 - 0.7 * res).max(0.12);
+                let num = (1.0 - r2).abs();
+                let den = ((1.0 - r2).powi(2) + (ratio * bw).powi(2)).sqrt();
+                (num / den.max(1e-4)).max(0.02)
+            }
+            FilterKind::Comb => {
+                let fb = 0.25 + 0.68 * res;
+                let phase = std::f32::consts::TAU * ratio;
+                let denom = (1.0 + fb * fb - 2.0 * fb * phase.cos()).sqrt();
+                (1.0 - fb) / denom.max(0.12)
+            }
+        };
+
+        let db = 20.0 * mag.max(1e-3).log10();
+        let y = (zero_y - (db / 24.0) * (inner.height() * 0.34))
+            .clamp(inner.top() + 2.0 * px, inner.bottom() - 2.0 * px);
+        pts.push(pos2(inner.left() + nx * inner.width(), y));
+    }
+
+    ui.painter().add(Shape::line(pts, Stroke::new(2.2 * px, ink)));
+
+    let handle = pos2(
+        inner.left() + cutoff * inner.width(),
+        (zero_y - res * inner.height() * 0.30).clamp(inner.top() + 4.0 * px, inner.bottom() - 4.0 * px),
+    );
+    ui.painter().circle_filled(handle, 6.5 * px, ink);
+    ui.painter()
+        .circle_stroke(handle, 6.5 * px, Stroke::new(1.5 * px, bg));
 
     changed
 }
