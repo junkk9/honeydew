@@ -1103,37 +1103,21 @@ const DEWSERUM: &[P] = &[
     P::ENABLE, // 0
     P::plain("Osc A Level", 0.85), // 1
     P::cont("Osc A WT Pos", 2.0 / 3.0, Display::Generic), // 2
-    P::cont(
-        "Osc A Pitch",
-        0.5,
-        Display::Steps {
-            min: -24,
-            count: 49,
-            fmt: Fmt::new(0, " st").sign(Sign::Positive),
-        },
-    ), // 3
+    P::cont("Osc A Pitch", 0.5, Display::linear(-24.0, 24.0, 0, " st")), // 3
     P::cont("Osc A Fine", 0.5, Display::linear(-100.0, 100.0, 0, " ct")), // 4
-    P::menu("Osc A Unison", 1.0 / 3.0, &["1", "2", "3", "4", "5", "6", "7"]), // 5
+    P::menu("Osc A Unison", 4.0 / 11.0, &["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]), // 5
     P::plain("Osc A Detune", 0.35), // 6
     P::plain("Osc A Blend", 0.75), // 7
     P::plain("Osc A Width", 0.6), // 8
     P::plain("Osc B Level", 0.0), // 9
     P::cont("Osc B WT Pos", 0.0, Display::Generic), // 10
-    P::cont(
-        "Osc B Pitch",
-        0.5,
-        Display::Steps {
-            min: -24,
-            count: 49,
-            fmt: Fmt::new(0, " st").sign(Sign::Positive),
-        },
-    ), // 11
+    P::cont("Osc B Pitch", 0.5, Display::linear(-24.0, 24.0, 0, " st")), // 11
     P::cont("Osc B Fine", 0.5, Display::linear(-100.0, 100.0, 0, " ct")), // 12
-    P::menu("Osc B Unison", 0.0, &["1", "2", "3", "4", "5", "6", "7"]), // 13
+    P::menu("Osc B Unison", 0.0, &["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]), // 13
     P::plain("Osc B Detune", 0.25), // 14
     P::plain("Osc B Blend", 1.0), // 15
     P::plain("Osc B Width", 0.5), // 16
-    P::menu("Filter Type", 0.0, &["LP", "HP", "BP"]), // 17
+    P::menu("Filter Type", 0.0, &["LP 12", "LP 24", "HP 12", "HP 24", "BP 12", "Notch", "Comb"]), // 17
     P::cont(
         "Cutoff",
         0.85,
@@ -1211,6 +1195,7 @@ const DEWSERUM: &[P] = &[
     P::plain("LFO 4 Bend 0", 0.5), P::plain("LFO 4 Bend 1", 0.5), P::plain("LFO 4 Bend 2", 0.5), P::plain("LFO 4 Bend 3", 0.5),
     P::plain("LFO 4 Bend 4", 0.5), P::plain("LFO 4 Bend 5", 0.5), P::plain("LFO 4 Bend 6", 0.5), P::plain("LFO 4 Bend 7", 0.5),
     P::plain("LFO 4 Bend 8", 0.5), P::plain("LFO 4 Bend 9", 0.5), P::plain("LFO 4 Bend 10", 0.5),
+    P::plain("Filter Drive", 0.0), // 223
 ];
 pub static MODULES: &[ModuleSpec] = &[
     ModuleSpec::instrument(
