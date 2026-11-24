@@ -625,9 +625,12 @@ pub enum ModDest {
     OscBLevel,
     OscADetune,
     OscBDetune,
+    OscASync,
+    OscBSync,
+    OscAFm,
 }
 
-pub const DEST_COUNT: usize = 11;
+pub const DEST_COUNT: usize = 14;
 
 impl ModDest {
     pub const ALL: [ModDest; DEST_COUNT] = [
@@ -642,6 +645,9 @@ impl ModDest {
         Self::OscBLevel,
         Self::OscADetune,
         Self::OscBDetune,
+        Self::OscASync,
+        Self::OscBSync,
+        Self::OscAFm,
     ];
     pub const NAMES: [&'static str; DEST_COUNT] = [
         "None",
@@ -655,6 +661,9 @@ impl ModDest {
         "B Level",
         "A Detune",
         "B Detune",
+        "A Sync",
+        "B Sync",
+        "A FM Depth",
     ];
 
     pub fn from_param(v: f32) -> Self {
