@@ -29,7 +29,7 @@ pub mod param {
     use super::{ENV_COUNT, LFO_COUNT};
 
     pub const ENABLE: usize = 0;
-    pub const OSC_BASE: [usize; 2] =;
+    pub const OSC_BASE: [usize; 2] = [1usize, 9usize];
     pub const OSC_PARAMS: usize = 8;
     pub const LEVEL: usize = 0;
     pub const WT_POS: usize = 1;
