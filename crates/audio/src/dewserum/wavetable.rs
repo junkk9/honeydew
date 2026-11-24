@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 pub const FRAME_LEN: usize = 2048;
 pub const BASIC_FRAMES: usize = 4;
 pub const MAX_WAV_FRAMES: usize = 64;
-pub const TABLE_COUNT: usize = 15;
+pub const TABLE_COUNT: usize = 14;
 pub const TABLE_NAMES: [&str; TABLE_COUNT] = [
     "Basic Shapes",
     "Analog PWM 02",
@@ -18,7 +18,6 @@ pub const TABLE_NAMES: [&str; TABLE_COUNT] = [
     "Growl 01",
     "Growl 02",
     "Growl 03",
-    "Growl 04",
     "Growl 12",
     "Hyper 04",
     "Hyper 05",
@@ -35,7 +34,6 @@ const EMBEDDED_WAVS: [&[u8]; TABLE_COUNT - 1] = [
     include_bytes!("wtables/Growl 01.wav"),
     include_bytes!("wtables/Growl 02.wav"),
     include_bytes!("wtables/Growl 03.wav"),
-    include_bytes!("wtables/Growl 04.wav"),
     include_bytes!("wtables/Growl 12.wav"),
     include_bytes!("wtables/Hyper 04.wav"),
     include_bytes!("wtables/Hyper 05.wav"),
