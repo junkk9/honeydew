@@ -11,7 +11,7 @@ use modulation::{
     AdsrParams, CurvePreset, Envelope, Lfo, LfoCurve, LfoSettings, LfoTable, LfoTrig, ModDest,
     ModInputs, ModMatrix, SLOT_PARAMS, SLOTS, choice,
 };
-use wavetable::{Morph, Reader, WavetableBank, bank};
+use wavetable::{Reader, TABLE_COUNT, WavetableBank, bank};
 
 pub const TICK: usize = 32;
 pub const MAX_VOICES: usize = 8;
@@ -96,7 +96,12 @@ pub mod param {
     /// 4 LFO curves x 36 params: 79..223
     pub const LFO_CURVE: usize = VOICES + 1;
     pub const FILTER_DRIVE: usize = LFO_CURVE + LFO_COUNT * CURVE_PARAMS;
-    pub const COUNT: usize = FILTER_DRIVE + 1;
+    pub const OSC_A_TABLE: usize = FILTER_DRIVE + 1; // 224
+    pub const OSC_B_TABLE: usize = OSC_A_TABLE + 1; // 225
+    pub const OSC_A_SYNC: usize = OSC_B_TABLE + 1; // 226
+    pub const OSC_B_SYNC: usize = OSC_A_SYNC + 1; // 227
+    pub const OSC_A_FM: usize = OSC_B_SYNC + 1; // 228
+    pub const COUNT: usize = OSC_A_FM + 1; // 229
 
     pub const fn env_at(index: usize) -> usize {
         ENV_BASE + index * ENV_PARAMS
@@ -129,6 +134,11 @@ pub fn defaults() -> [f32; PARAM_COUNT] {
     p[RESONANCE] = 0.15;
     p[KEY_TRACK] = 0.0;
     p[FILTER_DRIVE] = 0.0;
+    p[OSC_A_TABLE] = 0.0;
+    p[OSC_B_TABLE] = 0.0;
+    p[OSC_A_SYNC] = 0.0;
+    p[OSC_B_SYNC] = 0.0;
+    p[OSC_A_FM] = 0.0;
 
     p[env_at(0usize)..env_at(0usize) + 4].copy_from_slice(&[0.2, 0.5, 0.8, 0.4]);
     for e in 1..ENV_COUNT {
@@ -190,11 +200,13 @@ fn unison_weights(n: usize, blend: f32, width: f32) -> ([f32; MAX_UNISON], [f32;
 
 #[derive(Clone, Copy)]
 struct OscControl {
+    table: usize,
     level: f32,
     wt_pos: f32,
     semitones: f32,
     unison: usize,
     detune: f32,
+    sync: f32,
     left: [f32; MAX_UNISON],
     right: [f32; MAX_UNISON],
 }
@@ -202,6 +214,7 @@ struct OscControl {
 #[derive(Clone, Copy)]
 struct Control {
     osc: [OscControl; 2],
+    fm_from_b: f32,
     env1: AdsrParams,
     env_mod: [AdsrParams; 3],
     matrix: ModMatrix,
@@ -220,16 +233,20 @@ struct Control {
 
 impl Control {
     fn build(p: &[f32; PARAM_COUNT], sample_rate: f32, bend: f32, wheel: f32) -> Self {
+        let table_params = [param::OSC_A_TABLE, param::OSC_B_TABLE];
+        let sync_params = [param::OSC_A_SYNC, param::OSC_B_SYNC];
         let osc = std::array::from_fn(|o| {
             let at = param::OSC_BASE[o];
             let unison = 1 + choice(p[at + param::UNISON], MAX_UNISON);
             let (left, right) = unison_weights(unison, p[at + param::BLEND], p[at + param::WIDTH]);
             OscControl {
+                table: choice(p[table_params[o]], TABLE_COUNT),
                 level: p[at + param::LEVEL],
                 wt_pos: p[at + param::WT_POS],
                 semitones: semitones(p[at + param::PITCH]) + (2.0 * p[at + param::FINE] - 1.0),
                 unison,
                 detune: p[at + param::DETUNE],
+                sync: p[sync_params[o]].clamp(0.0, 1.0),
                 left,
                 right,
             }
@@ -242,6 +259,7 @@ impl Control {
         let master = p[param::MASTER];
         Self {
             osc,
+            fm_from_b: p[param::OSC_A_FM].clamp(0.0, 1.0),
             env1: adsr(0usize, sample_rate),
             env_mod: [
                 adsr(1usize, tick_rate),
@@ -264,7 +282,7 @@ impl Control {
             wheel,
         }
     }
-            }
+    }
 // ---------------------------------------------------------------------------------------------------------------------
 // Voices
 // ---------------------------------------------------------------------------------------------------------------------
@@ -273,6 +291,7 @@ const WT_DEST: [ModDest; 2] = [ModDest::OscAWtPos, ModDest::OscBWtPos];
 const PITCH_DEST: [ModDest; 2] = [ModDest::OscAPitch, ModDest::OscBPitch];
 const LEVEL_DEST: [ModDest; 2] = [ModDest::OscALevel, ModDest::OscBLevel];
 const DETUNE_DEST: [ModDest; 2] = [ModDest::OscADetune, ModDest::OscBDetune];
+const SYNC_DEST: [ModDest; 2] = [ModDest::OscASync, ModDest::OscBSync];
 
 struct Rng(u32);
 
@@ -305,6 +324,8 @@ struct Voice {
     comb_fb: f32,
     phase: [[u32; MAX_UNISON]; 2],
     inc: [[u32; MAX_UNISON]; 2],
+    sync_mult: [u64; 2],
+    fm_amount: f32,
     readers: [[Reader<'static>; MAX_UNISON]; 2],
     gain: [f32; 2],
     gain_step: [f32; 2],
@@ -315,7 +336,7 @@ struct Voice {
 
 impl Voice {
     fn new() -> Self {
-        let idle = bank().reader(0usize, Morph::new(0.0));
+        let idle = bank().reader(0usize, 0usize, 0.0);
         Self {
             note: 0,
             velocity: 0.0,
@@ -334,6 +355,8 @@ impl Voice {
             comb_fb: 0.0,
             phase: [[0; MAX_UNISON]; 2],
             inc: [[0; MAX_UNISON]; 2],
+            sync_mult: [65536; 2],
+            fm_amount: 0.0,
             readers: [[idle; MAX_UNISON]; 2],
             gain: [0.0; 2],
             gain_step: [0.0; 2],
@@ -392,7 +415,7 @@ impl Voice {
                 env.gate_off();
             }
         }
-                }
+}
     fn update(
         &mut self,
         c: &Control,
@@ -436,7 +459,11 @@ impl Voice {
         let wt = bank();
         for o in 0..2 {
             let osc = &c.osc[o];
-            let morph = Morph::new(osc.wt_pos + m.get(WT_DEST[o]));
+            let sync_val = (osc.sync + m.get(SYNC_DEST[o])).clamp(0.0, 1.0);
+            let ratio = 1.0 + 15.0 * sync_val * sync_val;
+            self.sync_mult[o] = (ratio * 65536.0) as u64;
+
+            let morph_pos = (osc.wt_pos + m.get(WT_DEST[o])).clamp(0.0, 1.0);
             let note = (pitch + osc.semitones + m.get(PITCH_DEST[o])).clamp(-48.0, 160.0);
             let detune = (osc.detune + m.get(DETUNE_DEST[o])).clamp(0.0, 1.0);
             let spread = detune * detune * MAX_DETUNE_SEMITONES;
@@ -445,7 +472,12 @@ impl Voice {
                 let freq = (440.0 * ((semitone - 69.0) / 12.0).exp2()).min(0.49 * sample_rate);
                 self.inc[o][k] =
                     (f64::from(freq) / f64::from(sample_rate) * 4_294_967_296.0) as u32;
-                self.readers[o][k] = wt.reader(WavetableBank::level_for(freq, sample_rate), morph);
+                let effective_freq = (freq * ratio).min(0.49 * sample_rate);
+                self.readers[o][k] = wt.reader(
+                    osc.table,
+                    WavetableBank::level_for(effective_freq, sample_rate),
+                    morph_pos,
+                );
             }
             let level = (osc.level + m.get(LEVEL_DEST[o])).clamp(0.0, 1.0);
             let target = level * level;
@@ -456,6 +488,9 @@ impl Voice {
                 self.gain_step[o] = (target - self.gain[o]) / TICK as f32;
             }
         }
+
+        let fm_val = (c.fm_from_b + m.get(ModDest::OscAFm)).clamp(0.0, 1.0);
+        self.fm_amount = fm_val * fm_val * 0.5;
 
         let cutoff_oct = c.cutoff_oct
             + m.get(ModDest::Cutoff)
@@ -537,26 +572,55 @@ impl Voice {
     fn render(&mut self, n: usize, c: &Control, mix: &mut [[f32; TICK]; 2]) {
         let drive = c.drive;
         let use_drive = drive > 1.001;
+        let fm_amt = self.fm_amount;
+        let use_fm = fm_amt > 1e-6;
+
         #[allow(clippy::needless_range_loop)]
         for i in 0..n {
-            let (mut l, mut r) = (0.0f32, 0.0f32);
-            for o in 0..2 {
-                let gain = self.gain[o];
-                if gain != 0.0 || self.gain_step[o] != 0.0 {
-                    let osc = &c.osc[o];
-                    let (mut sum_l, mut sum_r) = (0.0f32, 0.0f32);
-                    for k in 0..osc.unison {
-                        let phase = self.phase[o][k].wrapping_add(self.inc[o][k]);
-                        self.phase[o][k] = phase;
-                        let s = self.readers[o][k].read(phase);
-                        sum_l += s * osc.left[k];
-                        sum_r += s * osc.right[k];
-                    }
-                    l += sum_l * gain;
-                    r += sum_r * gain;
+            // 1. Render Oscillator B first (runs even when Level = 0 if FM is active)
+            let gain_b = self.gain[1usize];
+            let need_b = gain_b != 0.0 || self.gain_step[1usize] != 0.0 || use_fm;
+            let (mut sum_bl, mut sum_br, mut mod_b) = (0.0f32, 0.0f32, 0.0f32);
+            if need_b {
+                let osc_b = &c.osc[1usize];
+                let mult_b = self.sync_mult[1usize];
+                for k in 0..osc_b.unison {
+                    let phase = self.phase[1usize][k].wrapping_add(self.inc[1usize][k]);
+                    self.phase[1usize][k] = phase;
+                    let synced = ((u64::from(phase) * mult_b) >> 16) as u32;
+                    let s = self.readers[1usize][k].read(synced);
+                    sum_bl += s * osc_b.left[k];
+                    sum_br += s * osc_b.right[k];
                 }
-                self.gain[o] = gain + self.gain_step[o];
+                mod_b = 0.5 * (sum_bl + sum_br);
             }
+            self.gain[1usize] = gain_b + self.gain_step[1usize];
+
+            // 2. Render Oscillator A (with optional FM phase modulation from B)
+            let gain_a = self.gain[0usize];
+            let (mut sum_al, mut sum_ar) = (0.0f32, 0.0f32);
+            if gain_a != 0.0 || self.gain_step[0usize] != 0.0 {
+                let osc_a = &c.osc[0usize];
+                let mult_a = self.sync_mult[0usize];
+                let fm_offset = if use_fm {
+                    ((mod_b * fm_amt) * 4_294_967_296.0) as i64 as u32
+                } else {
+                    0
+                };
+                for k in 0..osc_a.unison {
+                    let phase = self.phase[0usize][k].wrapping_add(self.inc[0usize][k]);
+                    self.phase[0usize][k] = phase;
+                    let synced = ((u64::from(phase) * mult_a) >> 16) as u32;
+                    let s = self.readers[0usize][k].read(synced.wrapping_add(fm_offset));
+                    sum_al += s * osc_a.left[k];
+                    sum_ar += s * osc_a.right[k];
+                }
+            }
+            self.gain[0usize] = gain_a + self.gain_step[0usize];
+
+            let mut l = sum_al * gain_a + sum_bl * gain_b;
+            let mut r = sum_ar * gain_a + sum_br * gain_b;
+
             if use_drive {
                 l = (l * drive).tanh();
                 r = (r * drive).tanh();
@@ -571,8 +635,8 @@ impl Voice {
             mix[1usize][i] += fr * amp * self.pan_gain[1usize];
         }
     }
-            }
-   // ---------------------------------------------------------------------------------------------------------------------
+}
+// ---------------------------------------------------------------------------------------------------------------------
 // The instrument
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -830,5 +894,5 @@ impl Instrument for DewSerum {
             voice.slide = [finite(pitch), finite(pan), finite(velocity)];
         }
     }
-            }
+                }
         
