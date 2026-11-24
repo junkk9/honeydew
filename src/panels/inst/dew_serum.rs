@@ -81,10 +81,6 @@ fn env_page() -> Part {
                 v_slider(id_b + 4, "Release").p(at + 3),
             ])
             .show(Show::Flag("ds_env", e))
-                0 => |_, s| active_env(s) == 0,
-                1 => |_, s| active_env(s) == 1,
-                2 => |_, s| active_env(s) == 2,
-                _ => |_, s| active_env(s) == 3,
         })),
     ])
 }
@@ -226,7 +222,7 @@ fn draw_matrix_pager(
     id: Id,
     r: Rect,
     _module: &mut ModuleInstance,
-    state: &mut PanelState;
+    state: &mut PanelState,
     ink: Color32,
 ) -> Vec<usize> {
     let px = 1.0 / cx.m.ppp();
@@ -271,7 +267,7 @@ fn draw_env_editor(
     id: Id,
     r: Rect,
     module: &mut ModuleInstance,
-    state: &mut PanelState;
+    state: &mut PanelState,
     ink: Color32,
 ) -> Vec<usize> {
     let (u, px) = (cx.m.u(1.0), 1.0 / cx.m.ppp());
@@ -406,7 +402,7 @@ fn draw_lfo_editor(
     id: Id,
     r: Rect,
     module: &mut ModuleInstance,
-    state: &mut PanelState;
+    state: &mut PanelState,
     ink: Color32,
 ) -> Vec<usize> {
     let (u, px) = (cx.m.u(1.0), 1.0 / cx.m.ppp());
