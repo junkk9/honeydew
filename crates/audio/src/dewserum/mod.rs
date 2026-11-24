@@ -15,14 +15,45 @@ use wavetable::{Morph, Reader, WavetableBank, bank};
 
 pub const TICK: usize = 32;
 pub const MAX_VOICES: usize = 8;
-pub const MAX_UNISON: usize = 7;
+pub const MAX_UNISON: usize = 12;
 pub const LFO_COUNT: usize = 4;
 pub const ENV_COUNT: usize = 4;
+const COMB_BUF_LEN: usize = 4096;
 
 const MAX_DETUNE_SEMITONES: f32 = 1.0;
 const LFO_SMOOTH_SECONDS: f32 = 0.002;
 const PITCH_BEND: usize = 4;
 const MOD_WHEEL: usize = 8;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FilterKind {
+    Lp12,
+    Lp24,
+    Hp12,
+    Hp24,
+    Bp12,
+    Notch,
+    Comb,
+}
+
+pub const FILTER_KIND_COUNT: usize = 7;
+
+impl FilterKind {
+    pub const NAMES: [&'static str; FILTER_KIND_COUNT] =
+        ["LP 12", "LP 24", "HP 12", "HP 24", "BP 12", "Notch", "Comb"];
+
+    pub fn from_param(v: f32) -> Self {
+        match choice(v, FILTER_KIND_COUNT) {
+            0 => Self::Lp12,
+            1 => Self::Lp24,
+            2 => Self::Hp12,
+            3 => Self::Hp24,
+            4 => Self::Bp12,
+            5 => Self::Notch,
+            _ => Self::Comb,
+        }
+    }
+}
 
 pub mod param {
     use super::modulation::{CURVE_PARAMS, SLOT_PARAMS, SLOTS};
@@ -64,7 +95,8 @@ pub mod param {
 
     /// 4 LFO curves x 36 params: 79..223
     pub const LFO_CURVE: usize = VOICES + 1;
-    pub const COUNT: usize = LFO_CURVE + LFO_COUNT * CURVE_PARAMS;
+    pub const FILTER_DRIVE: usize = LFO_CURVE + LFO_COUNT * CURVE_PARAMS;
+    pub const COUNT: usize = FILTER_DRIVE + 1;
 
     pub const fn env_at(index: usize) -> usize {
         ENV_BASE + index * ENV_PARAMS
@@ -86,7 +118,7 @@ pub fn defaults() -> [f32; PARAM_COUNT] {
     let mut p = [0.5; COUNT];
     p[ENABLE] = 1.0;
     let oscs = [
-        [0.85, 2.0 / 3.0, 0.5, 0.5, 1.0 / 3.0, 0.35, 0.75, 0.6],
+        [0.85, 2.0 / 3.0, 0.5, 0.5, 4.0 / 11.0, 0.35, 0.75, 0.6],
         [0.0, 0.0, 0.5, 0.5, 0.0, 0.25, 1.0, 0.5],
     ];
     for (base, values) in OSC_BASE.into_iter().zip(oscs) {
@@ -96,14 +128,14 @@ pub fn defaults() -> [f32; PARAM_COUNT] {
     p[CUTOFF] = 0.85;
     p[RESONANCE] = 0.15;
     p[KEY_TRACK] = 0.0;
+    p[FILTER_DRIVE] = 0.0;
 
-    p[env_at(0)..env_at(0) + 4].copy_from_slice(&[0.2, 0.5, 0.8, 0.4]);
+    p[env_at(0usize)..env_at(0usize) + 4].copy_from_slice(&[0.2, 0.5, 0.8, 0.4]);
     for e in 1..ENV_COUNT {
         p[env_at(e)..env_at(e) + 4].copy_from_slice(&[0.0, 0.5, 0.0, 0.5]);
     }
     for l in 0..LFO_COUNT {
         let at = lfo_at(l);
-        // Rate = 0.5, Mode = Hertz (0.0), Beat = 1/1 (4/9), Trig = Trig (0.0 - no random phase)
         p[at..at + 4].copy_from_slice(&[0.5, 0.0, 4.0 / 9.0, 0.0]);
     }
     for slot in 0..SLOTS {
@@ -173,10 +205,11 @@ struct Control {
     env1: AdsrParams,
     env_mod: [AdsrParams; 3],
     matrix: ModMatrix,
-    response: Response,
+    filter_kind: FilterKind,
     cutoff_oct: f32,
     resonance: f32,
     key_track: f32,
+    drive: f32,
     max_cutoff: f32,
     lfo_coef: f32,
     master: f32,
@@ -218,14 +251,11 @@ impl Control {
             matrix: ModMatrix::from_params(
                 &p[param::MATRIX..param::MATRIX + SLOTS * SLOT_PARAMS],
             ),
-            response: match choice(p[param::FILTER_TYPE], 3) {
-                0 => Response::LowPass,
-                1 => Response::HighPass,
-                _ => Response::BandPass,
-            },
+            filter_kind: FilterKind::from_param(p[param::FILTER_TYPE]),
             cutoff_oct: 20f32.log2() + 10.0 * p[param::CUTOFF],
             resonance: p[param::RESONANCE],
             key_track: p[param::KEY_TRACK],
+            drive: 1.0 + 7.0 * p[param::FILTER_DRIVE].clamp(0.0, 1.0),
             max_cutoff: (0.45 * sample_rate).clamp(20.0, 20_000.0),
             lfo_coef: 1.0 - (-(TICK as f32) / (sample_rate * LFO_SMOOTH_SECONDS)).exp(),
             master: master * master,
@@ -234,7 +264,7 @@ impl Control {
             wheel,
         }
     }
-    }
+            }
 // ---------------------------------------------------------------------------------------------------------------------
 // Voices
 // ---------------------------------------------------------------------------------------------------------------------
@@ -267,7 +297,12 @@ struct Voice {
     env_mod: [Envelope; 3],
     lfo: [Lfo; LFO_COUNT],
     lfo_smooth: [f32; LFO_COUNT],
-    filter: [Biquad; 2],
+    filter1: [Biquad; 2],
+    filter2: [Biquad; 2],
+    comb_buf: [[f32; COMB_BUF_LEN]; 2],
+    comb_pos: usize,
+    comb_delay: f32,
+    comb_fb: f32,
     phase: [[u32; MAX_UNISON]; 2],
     inc: [[u32; MAX_UNISON]; 2],
     readers: [[Reader<'static>; MAX_UNISON]; 2],
@@ -291,7 +326,12 @@ impl Voice {
             env_mod: [Envelope::default(); 3],
             lfo: [Lfo::default(); LFO_COUNT],
             lfo_smooth: [0.0; LFO_COUNT],
-            filter: [Biquad::default(); 2],
+            filter1: [Biquad::default(); 2],
+            filter2: [Biquad::default(); 2],
+            comb_buf: [[0.0; COMB_BUF_LEN]; 2],
+            comb_pos: 0,
+            comb_delay: 64.0,
+            comb_fb: 0.0,
             phase: [[0; MAX_UNISON]; 2],
             inc: [[0; MAX_UNISON]; 2],
             readers: [[idle; MAX_UNISON]; 2],
@@ -315,9 +355,14 @@ impl Voice {
     ) {
         if self.env1.is_idle() {
             self.env1.reset();
-            for f in &mut self.filter {
+            for f in &mut self.filter1 {
                 f.reset();
             }
+            for f in &mut self.filter2 {
+                f.reset();
+            }
+            self.comb_buf = [[0.0; COMB_BUF_LEN]; 2];
+            self.comb_pos = 0;
             for phases in &mut self.phase {
                 for (k, phase) in phases.iter_mut().enumerate() {
                     *phase = if k == 0 { 0 } else { rng.next_u32() };
@@ -347,8 +392,7 @@ impl Voice {
                 env.gate_off();
             }
         }
-    }
-
+                }
     fn update(
         &mut self,
         c: &Control,
@@ -417,9 +461,48 @@ impl Voice {
             + m.get(ModDest::Cutoff)
             + c.key_track * (pitch - 60.0) / 12.0;
         let cutoff = cutoff_oct.exp2().clamp(20.0, c.max_cutoff);
-        let q = 0.5 * 20f32.powf((c.resonance + m.get(ModDest::Resonance)).clamp(0.0, 1.0));
-        for f in &mut self.filter {
-            f.set_filter_response(c.response, cutoff, q, sample_rate);
+        let res = (c.resonance + m.get(ModDest::Resonance)).clamp(0.0, 1.0);
+        let q = 0.5 * 20f32.powf(res);
+        let q24 = 0.5 * 8f32.powf(res);
+
+        match c.filter_kind {
+            FilterKind::Lp12 => {
+                for f in &mut self.filter1 {
+                    f.set_filter_response(Response::LowPass, cutoff, q, sample_rate);
+                }
+            }
+            FilterKind::Lp24 => {
+                for ch in 0..2 {
+                    self.filter1[ch].set_filter_response(Response::LowPass, cutoff, q24, sample_rate);
+                    self.filter2[ch].set_filter_response(Response::LowPass, cutoff, q24, sample_rate);
+                }
+            }
+            FilterKind::Hp12 => {
+                for f in &mut self.filter1 {
+                    f.set_filter_response(Response::HighPass, cutoff, q, sample_rate);
+                }
+            }
+            FilterKind::Hp24 => {
+                for ch in 0..2 {
+                    self.filter1[ch].set_filter_response(Response::HighPass, cutoff, q24, sample_rate);
+                    self.filter2[ch].set_filter_response(Response::HighPass, cutoff, q24, sample_rate);
+                }
+            }
+            FilterKind::Bp12 => {
+                for f in &mut self.filter1 {
+                    f.set_filter_response(Response::BandPass, cutoff, q, sample_rate);
+                }
+            }
+            FilterKind::Notch => {
+                let bw = (1.2 - 0.9 * res).max(0.15);
+                for f in &mut self.filter1 {
+                    f.set_parametric_response(Response::Peak, cutoff, bw, -36.0, sample_rate);
+                }
+            }
+            FilterKind::Comb => {
+                self.comb_delay = (sample_rate / cutoff).clamp(2.0, (COMB_BUF_LEN - 2) as f32);
+                self.comb_fb = 0.25 + 0.72 * res;
+            }
         }
 
         self.vel_gain = (self.velocity + self.slide[2usize]).clamp(0.0, 1.0);
@@ -428,7 +511,32 @@ impl Voice {
         self.fresh = false;
     }
 
+    #[inline]
+    fn filter_sample(&mut self, ch: usize, x: f32, kind: FilterKind) -> f32 {
+        match kind {
+            FilterKind::Lp12 | FilterKind::Hp12 | FilterKind::Bp12 | FilterKind::Notch => {
+                self.filter1[ch].process(x)
+            }
+            FilterKind::Lp24 | FilterKind::Hp24 => {
+                let y = self.filter1[ch].process(x);
+                self.filter2[ch].process(y)
+            }
+            FilterKind::Comb => {
+                let d_int = self.comb_delay as usize;
+                let frac = self.comb_delay - d_int as f32;
+                let i0 = (self.comb_pos + COMB_BUF_LEN - d_int) % COMB_BUF_LEN;
+                let i1 = (i0 + COMB_BUF_LEN - 1) % COMB_BUF_LEN;
+                let delayed = self.comb_buf[ch][i0] * (1.0 - frac) + self.comb_buf[ch][i1] * frac;
+                let out = (x + delayed * self.comb_fb).tanh();
+                self.comb_buf[ch][self.comb_pos] = out;
+                out
+            }
+        }
+    }
+
     fn render(&mut self, n: usize, c: &Control, mix: &mut [[f32; TICK]; 2]) {
+        let drive = c.drive;
+        let use_drive = drive > 1.001;
         #[allow(clippy::needless_range_loop)]
         for i in 0..n {
             let (mut l, mut r) = (0.0f32, 0.0f32);
@@ -449,13 +557,22 @@ impl Voice {
                 }
                 self.gain[o] = gain + self.gain_step[o];
             }
+            if use_drive {
+                l = (l * drive).tanh();
+                r = (r * drive).tanh();
+            }
+            let fl = self.filter_sample(0usize, l, c.filter_kind);
+            let fr = self.filter_sample(1usize, r, c.filter_kind);
+            if matches!(c.filter_kind, FilterKind::Comb) {
+                self.comb_pos = (self.comb_pos + 1) % COMB_BUF_LEN;
+            }
             let amp = self.env1.advance(&c.env1) * self.vel_gain;
-            mix[0usize][i] += self.filter[0usize].process(l) * amp * self.pan_gain[0usize];
-            mix[1usize][i] += self.filter[1usize].process(r) * amp * self.pan_gain[1usize];
+            mix[0usize][i] += fl * amp * self.pan_gain[0usize];
+            mix[1usize][i] += fr * amp * self.pan_gain[1usize];
         }
     }
-                }
-            // ---------------------------------------------------------------------------------------------------------------------
+            }
+   // ---------------------------------------------------------------------------------------------------------------------
 // The instrument
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -615,7 +732,7 @@ impl Instrument for DewSerum {
             return;
         }
         self.params[index] = value.clamp(0.0, 1.0);
-        if index >= param::LFO_CURVE {
+        if index >= param::LFO_CURVE && index < param::FILTER_DRIVE {
             let lfo_idx = (index - param::LFO_CURVE) / modulation::CURVE_PARAMS;
             if lfo_idx < LFO_COUNT {
                 self.curve_dirty[lfo_idx] = true;
@@ -713,5 +830,5 @@ impl Instrument for DewSerum {
             voice.slide = [finite(pitch), finite(pan), finite(velocity)];
         }
     }
-                }
-            
+            }
+        
