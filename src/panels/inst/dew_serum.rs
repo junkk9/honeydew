@@ -7,11 +7,6 @@ use honeydew_audio::dewserum::{ENV_COUNT, LFO_COUNT, param};
 
 use crate::panels::build::*;
 use crate::ui::{UiCtx, widgets};
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-static ACTIVE_ENV: AtomicUsize = AtomicUsize::new(0);
-static ACTIVE_LFO: AtomicUsize = AtomicUsize::new(0);
-static MATRIX_PAGE: AtomicUsize = AtomicUsize::new(0);
 
 const LFO_1_SYNCED: Show = Show::Item(param::lfo_at(0usize) + param::LFO_MODE, 1);
 const LFO_2_SYNCED: Show = Show::Item(param::lfo_at(1usize) + param::LFO_MODE, 1);
@@ -85,7 +80,7 @@ fn env_page() -> Part {
                 v_slider(id_b + 3, "Sustain").p(at + 2),
                 v_slider(id_b + 4, "Release").p(at + 3),
             ])
-            .show(Show::Custom(match e {
+            .show(Show::Flag("ds_env", e))
                 0 => |_, s| active_env(s) == 0,
                 1 => |_, s| active_env(s) == 1,
                 2 => |_, s| active_env(s) == 2,
@@ -148,14 +143,14 @@ fn matrix_page() -> Part {
             matrix_slot_row(53000, 2),
             matrix_slot_row(54000, 3),
         ])
-        .show(Show::Custom(|_, s| active_matrix_page(s) == 0)),
+        .show(Show::Flag("ds_mat_page", 0)),
         vstack([
             matrix_slot_row(55000, 4),
             matrix_slot_row(56000, 5),
             matrix_slot_row(57000, 6),
             matrix_slot_row(58000, 7),
         ])
-        .show(Show::Custom(|_, s| active_matrix_page(s) == 1)),
+        .show(Show::Flag("ds_mat_page", 1)),
     ])
 }
 
@@ -166,17 +161,6 @@ fn matrix_slot_row(id_base: u32, slot: usize) -> Part {
         spinner(id_base + 20, "").p(at + 1).w(Size::Flex(1.0)),
         h_slider(id_base + 30, "Depth").p(at + 2).w(Size::Flex(1.3)),
     ])
-}
-fn active_env(_s: &PanelState) -> usize {
-    ACTIVE_ENV.load(Ordering::Relaxed).min(ENV_COUNT - 1)
-}
-
-fn active_lfo(_s: &PanelState) -> usize {
-    ACTIVE_LFO.load(Ordering::Relaxed).min(LFO_COUNT - 1)
-}
-
-fn active_matrix_page(_s: &PanelState) -> usize {
-    MATRIX_PAGE.load(Ordering::Relaxed).min(1)
 }
 
 fn draw_wave_a(
@@ -248,14 +232,14 @@ fn draw_matrix_pager(
     id: Id,
     r: Rect,
     _module: &mut ModuleInstance,
-    _state: &mut PanelState,
+    state: &mut PanelState;
     ink: Color32,
 ) -> Vec<usize> {
     let px = 1.0 / cx.m.ppp();
     let colors = &cx.theme.colors;
     let fill = colors.control_fill.to_color32();
     let text_col = colors.text.to_color32();
-    let mut page = MATRIX_PAGE.load(Ordering::Relaxed).min(1);
+    let mut page = state.flags.get("ds_mat_page").copied().unwrap_or(0).min(1);
 
     let labels = ["Slots 1–4", "Slots 5–8"];
     let btn_w = r.width() / 2.0;
@@ -274,7 +258,7 @@ fn draw_matrix_pager(
         };
         if widgets::button(ui, cx, &b, active).clicked() {
             page = idx;
-            MATRIX_PAGE.store(page, Ordering::Relaxed);
+            state.flags.insert("ds_mat_page", page);
         }
     }
     Vec::new()
@@ -293,7 +277,7 @@ fn draw_env_editor(
     id: Id,
     r: Rect,
     module: &mut ModuleInstance,
-    _state: &mut PanelState,
+    state: &mut PanelState;
     ink: Color32,
 ) -> Vec<usize> {
     let (u, px) = (cx.m.u(1.0), 1.0 / cx.m.ppp());
@@ -303,7 +287,7 @@ fn draw_env_editor(
     let text_col = colors.text.to_color32();
     let mut changed = Vec::new();
 
-    let mut cur_env = ACTIVE_ENV.load(Ordering::Relaxed).min(ENV_COUNT - 1);
+    let mut cur_env = state.flags.get("ds_env").copied().unwrap_or(0).min(ENV_COUNT - 1);
     let bar_h = 0.95 * u;
     let bar_rect = Rect::from_min_size(r.min, vec2(r.width(), bar_h));
     let plot_rect = Rect::from_min_max(pos2(r.left(), r.top() + bar_h + 4.0 * px), r.max);
@@ -325,7 +309,7 @@ fn draw_env_editor(
         };
         if widgets::button(ui, cx, &b, active).clicked() {
             cur_env = idx;
-            ACTIVE_ENV.store(cur_env, Ordering::Relaxed);
+            state.flags.insert("ds_env", cur_env);
         }
     }
 
@@ -428,7 +412,7 @@ fn draw_lfo_editor(
     id: Id,
     r: Rect,
     module: &mut ModuleInstance,
-    _state: &mut PanelState,
+    state: &mut PanelState;
     ink: Color32,
 ) -> Vec<usize> {
     let (u, px) = (cx.m.u(1.0), 1.0 / cx.m.ppp());
@@ -438,7 +422,7 @@ fn draw_lfo_editor(
     let text_col = colors.text.to_color32();
 
     let mut changed = Vec::new();
-    let mut cur_lfo = ACTIVE_LFO.load(Ordering::Relaxed).min(LFO_COUNT - 1);
+    let mut cur_lfo = state.flags.get("ds_lfo").copied().unwrap_or(0).min(LFO_COUNT - 1);
 
     let sel_h = 0.85 * u;
     let sel_rect = Rect::from_min_size(r.min, vec2(r.width(), sel_h));
@@ -466,7 +450,7 @@ fn draw_lfo_editor(
         };
         if widgets::button(ui, cx, &b, active).clicked() {
             cur_lfo = idx;
-            ACTIVE_LFO.store(cur_lfo, Ordering::Relaxed);
+            state.flags.insert("ds_lfo", cur_lfo);
         }
     }
 
