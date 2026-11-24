@@ -18,8 +18,8 @@ const LFO_SYNC_SHOWS: [Show; LFO_COUNT] = [LFO_1_SYNCED, LFO_2_SYNCED, LFO_3_SYN
 pub fn panel() -> Option<Panel> {
     Some(Panel::new(vstack([
         tabs(0, "OSC A · OSC B · FILTER · ENV · LFO · MATRIX · MASTER").h(Size::U(1.35)),
-        osc_page(10000, param::OSC_BASE[0usize], draw_wave_a).show(Show::Tab(0)),
-        osc_page(20000, param::OSC_BASE[1usize], draw_wave_b).show(Show::Tab(1)),
+    osc_page(10000, param::OSC_BASE[0usize], param::OSC_A_TABLE, param::OSC_A_SYNC, Some(param::OSC_A_FM), draw_wave_a).show(Show::Tab(0)),
+    osc_page(20000, param::OSC_BASE[1usize], param::OSC_B_TABLE, param::OSC_B_SYNC, None, draw_wave_b).show(Show::Tab(1)),
       vstack([
           list(31100, "LP 12 · LP 24 · HP 12 · HP 24 · BP 12 · Notch · Comb", Bar::Bottom)
               .p(param::FILTER_TYPE)
@@ -48,8 +48,34 @@ pub fn panel() -> Option<Panel> {
     ])))
 }
 
-fn osc_page(id_base: u32, base: usize, draw_fn: Draw) -> Part {
+fn osc_page(
+    id_base: u32,
+    base: usize,
+    table_param: usize,
+    sync_param: usize,
+    fm_param: Option<usize>,
+    draw_fn: Draw,
+) -> Part {
+    let mut bottom = vec![
+        knob(id_base + 400, "Pitch").p(base + param::PITCH),
+        knob(id_base + 500, "Fine").p(base + param::FINE),
+        spinner(id_base + 600, "Unison").p(base + param::UNISON),
+        knob(id_base + 650, "Sync").p(sync_param),
+    ];
+    if let Some(fm) = fm_param {
+        bottom.push(knob(id_base + 680, "FM <- B").p(fm));
+    }
+    bottom.extend([
+        v_slider(id_base + 700, "Detune").p(base + param::DETUNE),
+        v_slider(id_base + 800, "Blend").p(base + param::BLEND),
+        v_slider(id_base + 900, "Width").p(base + param::WIDTH),
+    ]);
+
     vstack([
+        spinner(id_base + 50, "Wavetable")
+            .p(table_param)
+            .items_per_column(5)
+            .h(Size::U(1.3)),
         hstack([
             display(id_base + 100)
                 .margins(0.2, 0.2, 0.2, 0.2)
@@ -58,15 +84,8 @@ fn osc_page(id_base: u32, base: usize, draw_fn: Draw) -> Part {
             knob(id_base + 200, "WT Pos").p(base + param::WT_POS),
             knob(id_base + 300, "Level").p(base + param::LEVEL),
         ])
-        .h(Size::U(4.0)),
-        hstack([
-            knob(id_base + 400, "Pitch").p(base + param::PITCH),
-            knob(id_base + 500, "Fine").p(base + param::FINE),
-            spinner(id_base + 600, "Unison").p(base + param::UNISON),
-            v_slider(id_base + 700, "Detune").p(base + param::DETUNE),
-            v_slider(id_base + 800, "Blend").p(base + param::BLEND),
-            v_slider(id_base + 900, "Width").p(base + param::WIDTH),
-        ]),
+        .h(Size::U(4.1)),
+        hstack(bottom),
     ])
 }
 
@@ -159,6 +178,7 @@ fn matrix_slot_row(id_base: u32, slot: usize) -> Part {
 }
 
 fn draw_wave_a(
+fn draw_wave_a(
     ui: &mut Ui,
     cx: &UiCtx,
     _id: Id,
@@ -167,7 +187,15 @@ fn draw_wave_a(
     _state: &mut PanelState,
     ink: Color32,
 ) -> Vec<usize> {
-    draw_wave_for(ui, cx, r, module, param::OSC_BASE[0usize] + param::WT_POS, ink);
+    draw_wave_for(
+        ui,
+        cx,
+        r,
+        module,
+        param::OSC_A_TABLE,
+        param::OSC_BASE[0usize] + param::WT_POS,
+        ink,
+    );
     Vec::new()
 }
 
@@ -180,7 +208,15 @@ fn draw_wave_b(
     _state: &mut PanelState,
     ink: Color32,
 ) -> Vec<usize> {
-    draw_wave_for(ui, cx, r, module, param::OSC_BASE[1usize] + param::WT_POS, ink);
+    draw_wave_for(
+        ui,
+        cx,
+        r,
+        module,
+        param::OSC_B_TABLE,
+        param::OSC_BASE[1usize] + param::WT_POS,
+        ink,
+    );
     Vec::new()
 }
 
@@ -189,6 +225,7 @@ fn draw_wave_for(
     cx: &UiCtx,
     r: Rect,
     module: &ModuleInstance,
+    table_param: usize,
     wt_param: usize,
     ink: Color32,
 ) {
@@ -198,9 +235,13 @@ fn draw_wave_for(
     painter.rect_filled(r, 4.0 * px, colors.control_fill.to_color32());
     painter.hline(r.x_range(), r.center().y, Stroke::new(px, colors.background.to_color32()));
 
+    let table_idx = honeydew_audio::dewserum::modulation::choice(
+        module.params.get(table_param).copied().unwrap_or(0.0),
+        honeydew_audio::dewserum::wavetable::TABLE_COUNT,
+    );
     let wt_pos = module.params.get(wt_param).copied().unwrap_or(0.0);
     let mut samples = [0.0f32; 128];
-    wave_preview(wt_pos, &mut samples);
+    wave_preview(table_idx, wt_pos, &mut samples);
 
     let inner = r.shrink(6.0 * px);
     if inner.width() <= 2.0 || inner.height() <= 2.0 {
@@ -779,7 +820,7 @@ fn draw_filter_curve(
 
 #[cfg(test)]
 pub const REFERENCE: Reference = Reference {
-    size: [16.96, 13.0],
+    size: [16.96, 14.0],
     settings: &[],
     cases: &[],
 };
