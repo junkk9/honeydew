@@ -85,7 +85,6 @@ fn env_page() -> Part {
                 1 => |_, s| active_env(s) == 1,
                 2 => |_, s| active_env(s) == 2,
                 _ => |_, s| active_env(s) == 3,
-            }))
         })),
     ])
 }
@@ -120,12 +119,7 @@ fn lfo_page() -> Part {
                     .items_per_column(5)
                     .show(sync_show),
             ])
-            .show(Show::Custom(match l {
-                0 => |_, s| active_lfo(s) == 0,
-                1 => |_, s| active_lfo(s) == 1,
-                2 => |_, s| active_lfo(s) == 2,
-                _ => |_, s| active_lfo(s) == 3,
-            }))
+                    .show(Show::Flag("ds_lfo", l))
         }))
         .w(Size::Flex(1.0)),
     ])
