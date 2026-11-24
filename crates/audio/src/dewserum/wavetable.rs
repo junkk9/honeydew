@@ -27,20 +27,20 @@ pub const TABLE_NAMES: [&str; TABLE_COUNT] = [
 ];
 
 const EMBEDDED_WAVS: [&[u8]; TABLE_COUNT - 1] = [
-    include_bytes!("../../../../wtables/Analog PWM Custom 02.wav"),
-    include_bytes!("../../../../wtables/Analog PWM Custom 05.wav"),
-    include_bytes!("../../../../wtables/Analog PWM Square 05.wav"),
-    include_bytes!("../../../../wtables/FM 01.wav"),
-    include_bytes!("../../../../wtables/FM 05.wav"),
-    include_bytes!("../../../../wtables/Growl 01.wav"),
-    include_bytes!("../../../../wtables/Growl 02.wav"),
-    include_bytes!("../../../../wtables/Growl 03.wav"),
-    include_bytes!("../../../../wtables/Growl 04.wav"),
-    include_bytes!("../../../../wtables/Growl 12.wav"),
-    include_bytes!("../../../../wtables/Hyper 04.wav"),
-    include_bytes!("../../../../wtables/Hyper 05.wav"),
-    include_bytes!("../../../../wtables/Hyper 06.wav"),
-    include_bytes!("../../../../wtables/Hyper 07.wav"),
+    include_bytes!("wtables/Analog PWM Custom 02.wav"),
+    include_bytes!("wtables/Analog PWM Custom 05.wav"),
+    include_bytes!("wtables/Analog PWM Square 05.wav"),
+    include_bytes!("wtables/FM 01.wav"),
+    include_bytes!("wtables/FM 05.wav"),
+    include_bytes!("wtables/Growl 01.wav"),
+    include_bytes!("wtables/Growl 02.wav"),
+    include_bytes!("wtables/Growl 03.wav"),
+    include_bytes!("wtables/Growl 04.wav"),
+    include_bytes!("wtables/Growl 12.wav"),
+    include_bytes!("wtables/Hyper 04.wav"),
+    include_bytes!("wtables/Hyper 05.wav"),
+    include_bytes!("wtables/Hyper 06.wav"),
+    include_bytes!("wtables/Hyper 07.wav"),
 ];
 
 pub const MIP_LEVELS: usize = 10;
