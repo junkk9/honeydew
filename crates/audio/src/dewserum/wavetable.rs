@@ -44,7 +44,7 @@ const EMBEDDED_WAVS: [&[u8]; TABLE_COUNT - 1] = [
 ];
 
 pub const MIP_LEVELS: usize = 10;
-pub const HARMONICS: [usize; MIP_LEVELS] =;
+pub const HARMONICS: [usize; MIP_LEVELS] = [1023usize, 511, 255, 127, 63, 31, 15, 7, 3, 1];
 pub const PREVIEW_LEVEL: usize = 3;
 
 const STRIDE: usize = FRAME_LEN + 1;
