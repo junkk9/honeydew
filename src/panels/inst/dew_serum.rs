@@ -7,6 +7,11 @@ use honeydew_audio::dewserum::{ENV_COUNT, LFO_COUNT, param};
 
 use crate::panels::build::*;
 use crate::ui::{UiCtx, widgets};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static ACTIVE_ENV: AtomicUsize = AtomicUsize::new(0);
+static ACTIVE_LFO: AtomicUsize = AtomicUsize::new(0);
+static MATRIX_PAGE: AtomicUsize = AtomicUsize::new(0);
 
 const LFO_1_SYNCED: Show = Show::Item(param::lfo_at(0usize) + param::LFO_MODE, 1);
 const LFO_2_SYNCED: Show = Show::Item(param::lfo_at(1usize) + param::LFO_MODE, 1);
@@ -162,25 +167,16 @@ fn matrix_slot_row(id_base: u32, slot: usize) -> Part {
         h_slider(id_base + 30, "Depth").p(at + 2).w(Size::Flex(1.3)),
     ])
 }
-fn active_env(ui: &Ui) -> usize {
-    ui.ctx()
-        .data(|d| d.get_temp::<usize>(Id::new("ds_active_env")))
-        .unwrap_or(0)
-        .min(ENV_COUNT - 1)
+fn active_env(_s: &PanelState) -> usize {
+    ACTIVE_ENV.load(Ordering::Relaxed).min(ENV_COUNT - 1)
 }
 
-fn active_lfo(ui: &Ui) -> usize {
-    ui.ctx()
-        .data(|d| d.get_temp::<usize>(Id::new("ds_active_lfo")))
-        .unwrap_or(0)
-        .min(LFO_COUNT - 1)
+fn active_lfo(_s: &PanelState) -> usize {
+    ACTIVE_LFO.load(Ordering::Relaxed).min(LFO_COUNT - 1)
 }
 
-fn active_matrix_page(ui: &Ui) -> usize {
-    ui.ctx()
-        .data(|d| d.get_temp::<usize>(Id::new("ds_matrix_page")))
-        .unwrap_or(0)
-        .min(1)
+fn active_matrix_page(_s: &PanelState) -> usize {
+    MATRIX_PAGE.load(Ordering::Relaxed).min(1)
 }
 
 fn draw_wave_a(
@@ -259,7 +255,7 @@ fn draw_matrix_pager(
     let colors = &cx.theme.colors;
     let fill = colors.control_fill.to_color32();
     let text_col = colors.text.to_color32();
-    let mut page = active_matrix_page(ui);
+    let mut page = MATRIX_PAGE.load(Ordering::Relaxed).min(1);
 
     let labels = ["Slots 1–4", "Slots 5–8"];
     let btn_w = r.width() / 2.0;
@@ -278,7 +274,7 @@ fn draw_matrix_pager(
         };
         if widgets::button(ui, cx, &b, active).clicked() {
             page = idx;
-            ui.ctx().data_mut(|d| d.insert_temp(Id::new("ds_matrix_page"), page));
+            MATRIX_PAGE.store(page, Ordering::Relaxed);
         }
     }
     Vec::new()
@@ -307,7 +303,7 @@ fn draw_env_editor(
     let text_col = colors.text.to_color32();
     let mut changed = Vec::new();
 
-    let mut cur_env = active_env(ui);
+    let mut cur_env = ACTIVE_ENV.load(Ordering::Relaxed).min(ENV_COUNT - 1);
     let bar_h = 0.95 * u;
     let bar_rect = Rect::from_min_size(r.min, vec2(r.width(), bar_h));
     let plot_rect = Rect::from_min_max(pos2(r.left(), r.top() + bar_h + 4.0 * px), r.max);
@@ -329,7 +325,7 @@ fn draw_env_editor(
         };
         if widgets::button(ui, cx, &b, active).clicked() {
             cur_env = idx;
-            ui.ctx().data_mut(|d| d.insert_temp(Id::new("ds_active_env"), cur_env));
+            ACTIVE_ENV.store(cur_env, Ordering::Relaxed);
         }
     }
 
@@ -442,7 +438,7 @@ fn draw_lfo_editor(
     let text_col = colors.text.to_color32();
 
     let mut changed = Vec::new();
-    let mut cur_lfo = active_lfo(ui);
+    let mut cur_lfo = ACTIVE_LFO.load(Ordering::Relaxed).min(LFO_COUNT - 1);
 
     let sel_h = 0.85 * u;
     let sel_rect = Rect::from_min_size(r.min, vec2(r.width(), sel_h));
@@ -470,8 +466,7 @@ fn draw_lfo_editor(
         };
         if widgets::button(ui, cx, &b, active).clicked() {
             cur_lfo = idx;
-            ui.ctx()
-                .data_mut(|d| d.insert_temp(Id::new("ds_active_lfo"), cur_lfo));
+            ACTIVE_LFO.store(cur_lfo, Ordering::Relaxed);
         }
     }
 
