@@ -1093,6 +1093,9 @@ const DS_MOD_DESTS: &[&str] = &[
     "B Level",
     "A Detune",
     "B Detune",
+    "A Sync",
+    "B Sync",
+    "A FM Depth",
 ];
 const DS_LFO_BEATS: &[&str] = &[
     "1/8", "1/4", "1/2", "3/4", "1/1", "2/1", "4/1", "8/1", "16/1", "32/1",
@@ -1196,6 +1199,52 @@ const DEWSERUM: &[P] = &[
     P::plain("LFO 4 Bend 4", 0.5), P::plain("LFO 4 Bend 5", 0.5), P::plain("LFO 4 Bend 6", 0.5), P::plain("LFO 4 Bend 7", 0.5),
     P::plain("LFO 4 Bend 8", 0.5), P::plain("LFO 4 Bend 9", 0.5), P::plain("LFO 4 Bend 10", 0.5),
     P::plain("Filter Drive", 0.0), // 223
+    P::menu(
+        "Osc A Table",
+        0.0,
+        &[
+            "Basic Shapes",
+            "Analog PWM 02",
+            "Analog PWM 05",
+            "Analog Square 05",
+            "FM 01",
+            "FM 05",
+            "Growl 01",
+            "Growl 02",
+            "Growl 03",
+            "Growl 04",
+            "Growl 12",
+            "Hyper 04",
+            "Hyper 05",
+            "Hyper 06",
+            "Hyper 07",
+        ],
+    ), // 224
+    P::menu(
+        "Osc B Table",
+        0.0,
+        &[
+            "Basic Shapes",
+            "Analog PWM 02",
+            "Analog PWM 05",
+            "Analog Square 05",
+            "FM 01",
+            "FM 05",
+            "Growl 01",
+            "Growl 02",
+            "Growl 03",
+            "Growl 04",
+            "Growl 12",
+            "Hyper 04",
+            "Hyper 05",
+            "Hyper 06",
+            "Hyper 07",
+        ],
+    ), // 225
+    P::plain("Osc A Sync", 0.0), // 226
+    P::plain("Osc B Sync", 0.0), // 227
+    P::plain("Osc A FM", 0.0), // 228
+    
 ];
 pub static MODULES: &[ModuleSpec] = &[
     ModuleSpec::instrument(
