@@ -178,7 +178,6 @@ fn matrix_slot_row(id_base: u32, slot: usize) -> Part {
 }
 
 fn draw_wave_a(
-fn draw_wave_a(
     ui: &mut Ui,
     cx: &UiCtx,
     _id: Id,
