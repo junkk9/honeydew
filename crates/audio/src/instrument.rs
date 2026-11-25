@@ -52,6 +52,10 @@ pub trait Instrument: Send {
     fn freezes_when_disabled(&self) -> bool {
         false
     }
+    /// Live telemetry/waveform samples for the module's panel.
+    fn analysis(&self) -> &[f32] {
+        &[]
+    }
 }
 
 /// The channel param MiniSynth reads as its mod wheel: MIDI CC #1 = 7 + 1.
