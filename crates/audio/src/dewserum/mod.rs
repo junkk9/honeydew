@@ -368,7 +368,6 @@ morph_pos: [f32; 2],
 
 impl Voice {
     fn new() -> Self {
-        let idle = bank().reader(0usize, 0usize, 0.0);
         Self {
             note: 0,
             velocity: 0.0,
@@ -389,7 +388,8 @@ impl Voice {
             inc: [[0; MAX_UNISON]; 2],
             sync_mult: [65536; 2],
             fm_amount: 0.0,
-            readers: [[idle; MAX_UNISON]; 2],
+            mip_level: [[0; MAX_UNISON]; 2],
+            morph_pos: [0.0; 2],
             gain: [0.0; 2],
             gain_step: [0.0; 2],
             vel_gain: 0.0,
@@ -814,18 +814,17 @@ impl DewSerum {
         for l in 0..LFO_COUNT {
             self.free_phases[l] = (self.free_phases[l] + self.lfo_settings[l].step).rem_euclid(1.0);
         }
-        let (control, custom, tables, lfos, rate) = (
-            &self.control,
-            &self.custom_tables,
-            &self.lfo_tables,
-            &self.lfo_settings,
-            self.sample_rate,
-        );
-        for voice in &mut self.voices {
-            if !voice.env1.is_idle() {
-                voice.update(control, custom, tables, lfos, rate, true);
-            }
-        }
+             let (control, tables, lfos, rate) = (
+         &self.control,
+         &self.lfo_tables,
+         &self.lfo_settings,
+         self.sample_rate,
+     );
+     for voice in &mut self.voices {
+         if !voice.env1.is_idle() {
+             voice.update(control, tables, lfos, rate, true);
+         }
+     }
         self.master_step = (self.control.master - self.master_now) / TICK as f32;
     }
 
@@ -848,14 +847,13 @@ impl DewSerum {
         self.note_count += 1;
         let voice = &mut self.voices[index];
         voice.start(key, velocity, pan, self.note_count, &lfos, &mut self.rng);
-        voice.update(
-            &self.control,
-            &self.custom_tables,
-            &self.lfo_tables,
-            &lfos,
-            self.sample_rate,
-            false,
-        );
+             voice.update(
+         &self.control,
+         &self.lfo_tables,
+         &lfos,
+         self.sample_rate,
+         false,
+     );
     }
 
     fn update_analysis(&mut self) {
@@ -959,11 +957,11 @@ impl Instrument for DewSerum {
             }
             let n = (TICK - self.tick_pos).min(frames - done);
             let mut mix = [[0.0f32; TICK]; 2];
-            for voice in &mut self.voices {
-                if !voice.env1.is_idle() {
-                    voice.render(n, &self.control, &mut mix);
-                }
-            }
+                     for voice in &mut self.voices {
+             if !voice.env1.is_idle() {
+                 voice.render(n, &self.control, &self.custom_tables, &mut mix);
+             }
+         }
             for i in 0..n {
                 self.master_now += self.master_step;
                 let out_l = mix[0usize][i] * self.master_now;
