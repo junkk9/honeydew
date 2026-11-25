@@ -68,6 +68,7 @@ mod fx;
 pub(crate) use fx::couple_param;
 pub(crate) use fx::couple_scale;
 pub use fx::post_feed;
+pub(crate) use fx::feed;
 pub(crate) mod inst;
 pub use inst::slicer::post_loop;
 #[cfg(test)]
