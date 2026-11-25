@@ -1285,14 +1285,25 @@ impl AudioRenderer for SongAudioEngine {
 
     /// An effect's analysis after the last segment, or a note effect's after the last render call.
     /// Empty for a channel or an instrument.
-    fn analysis(&self, index: usize) -> &[f32] {
+        fn analysis(&self, index: usize) -> &[f32] {
         if !self.note_slabs[index].is_empty() {
             return &self.note_slabs[index];
         }
         let key = self.meter_keys[index];
         match key.instance_id {
             ..=0 => &[],
-            id => (self.audio.effect(key.channel, id)).map_or(&[], |effect| effect.analysis()),
+            id => {
+                if let Some((_, module)) = self.instruments[key.channel]
+                    .iter()
+                    .find(|(inst_id, _)| *inst_id == id)
+                {
+                    let slab = module.analysis();
+                    if !slab.is_empty() {
+                        return slab;
+                    }
+                }
+                (self.audio.effect(key.channel, id)).map_or(&[], |effect| effect.analysis())
+            }
         }
     }
 
