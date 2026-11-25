@@ -179,7 +179,7 @@ fn osc_page(
 
 fn filter_page() -> Part {
     vstack([
-        list(30100, &FilterKind::NAMES.join(" · "), Bar::Bottom)
+        list(30100, "LP 12 · LP 24 · HP 12 · HP 24 · BP 12 · Notch · Comb", Bar::Bottom)
             .p(param::FILTER_TYPE)
             .h(Size::U(1.15)),
         display(30200)
