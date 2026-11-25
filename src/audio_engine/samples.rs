@@ -22,6 +22,7 @@ pub(crate) fn walk(song: &Song, refs: &mut Refs) {
         // Each lane kind appends its source here: audio clips, DW zones …
         slicer_loops(channel, refs);
         custom_shapes(channel, refs);
+        dewserum_tables(channel, refs);
     }
 }
 
@@ -237,3 +238,29 @@ fn soundfonts(channel: &Channel, refs: &mut Refs) {
 
 /// The SoundFont Player's module type id.
 const SOUNDFONT_PLAYER: u16 = 52;
+
+pub(crate) fn dewserum_table_path(module: &ModuleInstance, osc: usize) -> Option<ContentPath> {
+    if module.type_id != 53 {
+        return None;
+    }
+    let blob = module.file.custom_data.as_deref()?;
+    let tag = if osc == 0 { *b"WTA " } else { *b"WTB " };
+    let mut chunks = ChunkIter::new(blob, "CSTM").map_while(Result::ok);
+    let path = chunks
+        .find(|c| c.id == tag)?
+        .reader()
+        .content_path32()
+        .ok()?;
+    let (ContentPath::Shorthand { relative: text, .. } | ContentPath::Plain(text)) = &path;
+    (!text.is_empty()).then_some(path)
+}
+
+fn dewserum_tables(channel: &Channel, refs: &mut Refs) {
+    for module in &channel.rack.modules {
+        for osc in 0..2 {
+            if let Some(path) = dewserum_table_path(module, osc) {
+                refs.add(SampleKey::of_path(&path));
+            }
+        }
+    }
+}
