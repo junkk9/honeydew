@@ -40,6 +40,7 @@ pub(crate) const SLICER: u16 = 33;
 pub(crate) const THREE_OSC: u16 = 39;
 /// The SoundFont Player, whose loader names the file in its `SF2D`.
 pub(crate) const SOUNDFONT_PLAYER: u16 = 52;
+pub(crate) const DEW_SERUM: u16 = 53;
 
 /// The file `name` is no preset but a file module `type_id`'s loader names in its `CSTM`: a DW program (`.dwp`, `.sfz`)
 /// or audio file for the DW Sampler, an audio file for the Slicer or 3x Osc, a `.sf2` or `.sfz` for the SoundFont Player.
@@ -47,7 +48,7 @@ fn named_file(name: &Path, type_id: u16) -> bool {
     let audio = is_audio(name);
     match type_id {
         DW_SAMPLER => audio || is(name, DWP_EXT) || is(name, super::SFZ_EXT),
-        SLICER | THREE_OSC => audio,
+        SLICER | THREE_OSC | DEW_SERUM => audio,
         SOUNDFONT_PLAYER => is_soundfont(name),
         _ => false,
     }
@@ -202,6 +203,44 @@ fn path_cstm(
         };
         return sf2d.write(previous);
     }
+        if type_id == DEW_SERUM {
+        let previous = previous.unwrap_or_default();
+        let mut wta = None;
+        let mut wtb = None;
+        let mut kept = Vec::new();
+        for c in ChunkIter::new(previous, "CSTM").map_while(Result::ok) {
+            if c.id == *b"WTA " {
+                wta = Some(c.payload.to_vec());
+            } else if c.id == *b"WTB " {
+                wtb = Some(c.payload.to_vec());
+            } else {
+                kept.push((c.id, c.payload.to_vec()));
+            }
+        }
+        let mut writer = ChunkWriter::default();
+        // Flag chunk `WTOS` (byte 0: 0 = OSC A, 1 = OSC B) tells which oscillator opened the picker.
+        let target_b = kept
+            .iter()
+            .find(|(id, _)| id == b"WTOS")
+            .and_then(|(_, p)| p.first().copied())
+            .unwrap_or(0)
+            == 1;
+        if target_b {
+            writer.chunk(*b"WTB ", |w| w.content_path32(path))?;
+            if let Some(a) = wta {
+                writer.chunk(*b"WTA ", |w| w.raw(&a))?;
+            }
+        } else {
+            writer.chunk(*b"WTA ", |w| w.content_path32(path))?;
+            if let Some(b) = wtb {
+                writer.chunk(*b"WTB ", |w| w.raw(&b))?;
+            }
+        }
+        for (id, payload) in &kept {
+            writer.chunk(*id, |w| w.raw(payload))?;
+        }
+        return Ok(writer.into_bytes());
+        }
     let dw = type_id == DW_SAMPLER;
     let (magic, id): (&[u8], _) = if dw {
         (b"10WD", *b"PATh")
