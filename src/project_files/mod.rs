@@ -56,7 +56,7 @@ mod themes;
 pub use soundfonts::{SF2_EXT, SFZ_EXT, SOUNDFONT_EXTS, SOUNDFONTS_FOLDER};
 pub(crate) use soundfonts::{in_library, in_user_folder, is_sfz, is_soundfont};
 mod samples;
-pub use samples::{RECORDINGS_FOLDER, SAMPLE_EXTS, SAMPLES_FOLDER};
+pub use samples::{RECORDINGS_FOLDER, SAMPLE_EXTS, SAMPLES_FOLDER, WAVETABLES_FOLDER};
 pub(crate) mod content;
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) use content::real_folder;
