@@ -1217,6 +1217,7 @@ const DEWSERUM: &[P] = &[
             "Hyper 05",
             "Hyper 06",
             "Hyper 07",
+            "Custom (My Wavetables)",
         ],
     ), // 224
     P::menu(
@@ -1237,6 +1238,7 @@ const DEWSERUM: &[P] = &[
             "Hyper 05",
             "Hyper 06",
             "Hyper 07",
+            "Custom (My Wavetables)",
         ],
     ), // 225
     P::plain("Osc A Sync", 0.0), // 226
