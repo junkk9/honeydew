@@ -1,15 +1,11 @@
 //! DewSerum panel (type 53), card 16.5 U.
-//! Features:
-//! - Persistent top bar with live Output Scope oscilloscope across every tab
-//! - 14 built-in wavetables + Custom `.wav` loader (`My Wavetables`) for OSC A & OSC B
-//! - Real-time modulation animation on Filter curve (with live Hz readout) and modulated wave displays
 
 use std::f32::consts::PI;
 use std::path::Path;
 
 use eframe::egui::{Align2, Color32, Id, Pos2, Rect, Sense, Shape, Stroke, Ui, pos2, vec2};
 use honeydew_audio::dewserum::modulation::{
-    CURVE_PARAMS, CurvePreset, LfoCurve, MAX_POINTS, SLOT_PARAMS, SLOTS, choice,
+    CURVE_PARAMS, CurvePreset, LfoCurve, MAX_POINTS, choice,
 };
 use honeydew_audio::dewserum::wavetable::{CUSTOM_MENU_INDEX, TABLE_MENU_COUNT, wave_preview};
 use honeydew_audio::dewserum::{ANALYSIS_LEN, ENV_COUNT, FilterKind, LFO_COUNT, SCOPE_SAMPLES, param};
@@ -17,7 +13,7 @@ use honeydew_audio::dewserum::{ANALYSIS_LEN, ENV_COUNT, FilterKind, LFO_COUNT, S
 use crate::flm::chunk::{ChunkIter, ChunkWriter, ContentPath};
 use crate::metrics::FontSize;
 use crate::panels::build::*;
-use crate::panels::feed;
+use crate::panels::fx::feed;
 use crate::ui::UiCtx;
 
 pub const TYPE_ID: u16 = 53;
@@ -31,27 +27,19 @@ const ENV_TAB: &str = "ds_env_tab";
 const LFO_TAB: &str = "ds_lfo_tab";
 const MAT_TAB: &str = "ds_mat_tab";
 
-const WAVES_A: &str = "ds_wave_a_name";
-const WAVES_B: &str = "ds_wave_b_name";
-
-/// Telemetry indices inside the 144-float analysis buffer from `DewSerum::analysis()`.
 const T_CUTOFF: usize = 128;
 const T_RES: usize = 129;
 const T_WT_A: usize = 130;
 const T_WT_B: usize = 131;
-const T_PITCH_A: usize = 132;
-const T_PITCH_B: usize = 133;
 const T_SYNC_A: usize = 134;
 const T_SYNC_B: usize = 135;
 const T_FM: usize = 136;
-const T_DETUNE_A: usize = 137;
-const T_DETUNE_B: usize = 138;
-const T_LEVEL_A: usize = 139;
-const T_LEVEL_B: usize = 140;
 const T_ACTIVE: usize = 141;
 
-pub fn wire(module: &ModuleInstance, state: &mut PanelState) {
-    for (osc, key) in [(0usize, WAVES_A), (1usize, WAVES_B)] {
+const NOT_OSC_TABS: [Show; 2] = [Show::Not(&Show::Tab(0)), Show::Not(&Show::Tab(1))];
+
+pub fn wire(module: &mut ModuleInstance, state: &mut PanelState) {
+    for osc in 0..2 {
         let name = crate::audio_engine::samples::dewserum_table_path(module, osc).and_then(|p| {
             let (ContentPath::Shorthand { relative: text, .. } | ContentPath::Plain(text)) = p;
             Some(Path::new(&text).file_stem()?.to_string_lossy().into_owned())
@@ -60,42 +48,38 @@ pub fn wire(module: &ModuleInstance, state: &mut PanelState) {
             if osc == 0 { 10051 } else { 20051 },
             name.unwrap_or_default(),
         );
-        let _ = key;
+    }
+    // Tag `WTOS` in custom_data according to active OSC tab (0 = OSC A, 1 = OSC B)
+    if state.tab <= 1 {
+        let osc_idx = state.tab as u8;
+        let previous = module.file.custom_data.as_deref().unwrap_or_default();
+        let current_tag = ChunkIter::new(previous, "CSTM")
+            .map_while(Result::ok)
+            .find(|c| c.id == *b"WTOS")
+            .and_then(|c| c.payload.first().copied());
+        if current_tag != Some(osc_idx) {
+            let kept: Vec<_> = ChunkIter::new(previous, "CSTM")
+                .map_while(Result::ok)
+                .filter(|c| c.id != *b"WTOS")
+                .collect();
+            let mut writer = ChunkWriter::default();
+            let _ = writer.chunk(*b"WTOS", |w| w.raw(&[osc_idx]));
+            for c in kept {
+                let _ = writer.chunk(c.id, |w| w.raw(c.payload));
+            }
+            module.file.custom_data = Some(writer.into_bytes());
+        }
     }
 }
 
-/// Checks if `Custom (My Wavetables)` was just picked on OSC A or OSC B, tags `WTOS` in `custom_data`,
-/// and returns true so the rack opens the sample picker.
-pub fn custom_picked(module: &mut ModuleInstance, changed: &[i32]) -> bool {
+pub fn custom_picked(module: &ModuleInstance, changed: &[i32]) -> bool {
     if module.type_id != TYPE_ID {
         return false;
     }
-    let osc = if changed.contains(&(param::OSC_A_TABLE as i32))
-        && choice(module.params[param::OSC_A_TABLE], TABLE_MENU_COUNT) == CUSTOM_MENU_INDEX
-    {
-        Some(0u8)
-    } else if changed.contains(&(param::OSC_B_TABLE as i32))
-        && choice(module.params[param::OSC_B_TABLE], TABLE_MENU_COUNT) == CUSTOM_MENU_INDEX
-    {
-        Some(1u8)
-    } else {
-        None
-    };
-    let Some(osc_idx) = osc else {
-        return false;
-    };
-    let previous = module.file.custom_data.as_deref().unwrap_or_default();
-    let kept: Vec<_> = ChunkIter::new(previous, "CSTM")
-        .map_while(Result::ok)
-        .filter(|c| c.id != *b"WTOS")
-        .collect();
-    let mut writer = ChunkWriter::default();
-    let _ = writer.chunk(*b"WTOS", |w| w.raw(&[osc_idx]));
-    for c in kept {
-        let _ = writer.chunk(c.id, |w| w.raw(c.payload));
-    }
-    module.file.custom_data = Some(writer.into_bytes());
-    true
+    (changed.contains(&(param::OSC_A_TABLE as i32))
+        && choice(module.params[param::OSC_A_TABLE], TABLE_MENU_COUNT) == CUSTOM_MENU_INDEX)
+        || (changed.contains(&(param::OSC_B_TABLE as i32))
+            && choice(module.params[param::OSC_B_TABLE], TABLE_MENU_COUNT) == CUSTOM_MENU_INDEX)
 }
 
 pub fn panel() -> Option<Panel> {
@@ -125,7 +109,7 @@ pub fn panel() -> Option<Panel> {
                     .font(FontSize::Pt10)
                     .align(Align2::LEFT_CENTER)
                     .ink(Ink::Text)
-                    .show(Show::Not(&Show::Or(&[Show::Tab(0), Show::Tab(1)]))),
+                    .show(Show::All(&NOT_OSC_TABS)),
             ])
             .w(Size::Flex(1.25)),
             display(900)
@@ -137,7 +121,6 @@ pub fn panel() -> Option<Panel> {
         osc_page(
             10000,
             param::OSC_BASE[0usize],
-            0usize,
             param::OSC_A_SYNC,
             Some(param::OSC_A_FM),
             draw_wave_a,
@@ -146,7 +129,6 @@ pub fn panel() -> Option<Panel> {
         osc_page(
             20000,
             param::OSC_BASE[1usize],
-            1usize,
             param::OSC_B_SYNC,
             None,
             draw_wave_b,
@@ -162,7 +144,6 @@ pub fn panel() -> Option<Panel> {
 fn osc_page(
     id_base: u32,
     base: usize,
-    osc_idx: usize,
     sync_param: usize,
     fm_param: Option<usize>,
     draw_fn: Draw,
@@ -182,7 +163,6 @@ fn osc_page(
         v_slider(id_base + 900, "Width").p(base + param::WIDTH),
     ]);
 
-    let _ = osc_idx;
     vstack([
         hstack([
             display(id_base + 100)
@@ -199,7 +179,7 @@ fn osc_page(
 
 fn filter_page() -> Part {
     vstack([
-        selector(30100, FilterKind::NAMES.join(" · "))
+        list(30100, FilterKind::NAMES.join(" · "), Bar::Bottom)
             .p(param::FILTER_TYPE)
             .h(Size::U(1.15)),
         display(30200)
@@ -241,7 +221,7 @@ fn env_page() -> Part {
         })
         .collect();
 
-    let mut children = vec![selector(40100, ENV_TABS).s(ENV_TAB).h(Size::U(1.15))];
+    let mut children = vec![list(40100, ENV_TABS, Bar::Bottom).s(ENV_TAB).h(Size::U(1.15))];
     children.extend(sub_pages);
     vstack(children)
 }
@@ -273,14 +253,14 @@ fn lfo_page() -> Part {
         })
         .collect();
 
-    let mut children = vec![selector(50100, LFO_TABS).s(LFO_TAB).h(Size::U(1.15))];
+    let mut children = vec![list(50100, LFO_TABS, Bar::Bottom).s(LFO_TAB).h(Size::U(1.15))];
     children.extend(sub_pages);
     vstack(children)
 }
 
 fn matrix_page() -> Part {
     let slot_row = |slot: usize| {
-        let at = param::MATRIX + slot * SLOT_PARAMS;
+        let at = param::MATRIX + slot * 3;
         let b = 61000 + (slot as u32) * 10;
         hstack([
             spinner(b + 1, "Source").p(at),
@@ -290,7 +270,7 @@ fn matrix_page() -> Part {
     };
 
     vstack([
-        selector(60100, MATRIX_TABS).s(MAT_TAB).h(Size::U(1.15)),
+        list(60100, MATRIX_TABS, Bar::Bottom).s(MAT_TAB).h(Size::U(1.15)),
         vstack([slot_row(0), slot_row(1), slot_row(2), slot_row(3)])
             .show(Show::Setting(60100, 0)),
         vstack([slot_row(4), slot_row(5), slot_row(6), slot_row(7)])
@@ -346,7 +326,7 @@ fn draw_output_scope(
         }
     }
     Vec::new()
-}
+                            }
 fn format_hz(hz: f32) -> String {
     if hz >= 1000.0 {
         format!("{:.1} kHz", hz / 1000.0)
@@ -487,7 +467,7 @@ fn draw_wave_for(
     if active {
         ui.ctx().request_repaint();
     }
-}
+    }
 fn draw_filter_curve(
     ui: &mut Ui,
     cx: &UiCtx,
@@ -685,7 +665,7 @@ fn draw_env_idx(
         painter.circle_stroke(pt, 5.0 * px, Stroke::new(1.5 * px, colors.text.to_color32()));
     }
     changed
-}
+            }
 fn draw_lfo_0(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> {
     draw_lfo_idx(ui, cx, r, m, 0, ink)
 }
@@ -735,63 +715,42 @@ fn draw_lfo_idx(
     let mut changed = Vec::new();
     let handle_r = 11.0 * px;
     let mut dragged_any = false;
+    let count = curve.len();
 
-    for i in 0..curve.count {
+    for i in 0..count {
+        let (px_norm, py_norm) = curve.point(i);
         let pt_pos = pos2(
-            inner.left() + curve.points[i].x * inner.width(),
-            inner.bottom() - curve.points[i].y * inner.height(),
+            inner.left() + px_norm * inner.width(),
+            inner.bottom() - py_norm * inner.height(),
         );
         let resp = ui.interact(
             Rect::from_center_size(pt_pos, vec2(handle_r * 2.0, handle_r * 2.0)),
             ui.id().with(("ds_lfo_pt", lfo_idx, i)),
             Sense::click_and_drag(),
         );
-        if resp.double_clicked() && curve.count > 2 && i > 0 && i + 1 < curve.count {
-            for k in i..curve.count - 1 {
-                curve.points[k] = curve.points[k + 1];
-            }
-            curve.count -= 1;
+        if resp.double_clicked() && curve.remove(i) {
             dragged_any = true;
             break;
         }
         if resp.dragged() {
             let pos = resp.interact_pointer_pos().unwrap_or(pt_pos);
-            let nx = if i == 0 {
-                0.0
-            } else if i + 1 == curve.count {
-                1.0
-            } else {
-                let min_x = curve.points[i - 1].x + 0.01;
-                let max_x = curve.points[i + 1].x - 0.01;
-                ((pos.x - inner.left()) / inner.width()).clamp(min_x, max_x)
-            };
+            let nx = ((pos.x - inner.left()) / inner.width()).clamp(0.0, 1.0);
             let ny = ((inner.bottom() - pos.y) / inner.height()).clamp(0.0, 1.0);
-            curve.points[i].x = nx;
-            curve.points[i].y = ny;
+            curve.move_point(i, nx, ny);
             dragged_any = true;
         }
     }
 
     let bg_resp = ui.interact(inner, ui.id().with(("ds_lfo_bg", lfo_idx)), Sense::click());
     if bg_resp.double_clicked()
-        && curve.count < MAX_POINTS
+        && curve.len() < MAX_POINTS
         && let Some(pos) = bg_resp.interact_pointer_pos()
     {
         let nx = ((pos.x - inner.left()) / inner.width()).clamp(0.02, 0.98);
         let ny = ((inner.bottom() - pos.y) / inner.height()).clamp(0.0, 1.0);
-        let insert_at = (0..curve.count)
-            .find(|&k| curve.points[k].x > nx)
-            .unwrap_or(curve.count);
-        for k in (insert_at..curve.count).rev() {
-            curve.points[k + 1] = curve.points[k];
+        if curve.insert(nx, ny).is_some() {
+            dragged_any = true;
         }
-        curve.points[insert_at] = honeydew_audio::dewserum::modulation::LfoPoint {
-            x: nx,
-            y: ny,
-            curve: 0.0,
-        };
-        curve.count += 1;
-        dragged_any = true;
     }
 
     if dragged_any {
@@ -809,16 +768,17 @@ fn draw_lfo_idx(
     let pts: Vec<Pos2> = (0..steps)
         .map(|s| {
             let t = s as f32 / (steps - 1) as f32;
-            let y = curve.sample(t);
+            let y = curve.value(t);
             pos2(inner.left() + t * inner.width(), inner.bottom() - y * inner.height())
         })
         .collect();
     painter.add(Shape::line(pts, Stroke::new(2.0 * px, ink)));
 
-    for i in 0..curve.count {
+    for i in 0..curve.len() {
+        let (px_norm, py_norm) = curve.point(i);
         let pt = pos2(
-            inner.left() + curve.points[i].x * inner.width(),
-            inner.bottom() - curve.points[i].y * inner.height(),
+            inner.left() + px_norm * inner.width(),
+            inner.bottom() - py_norm * inner.height(),
         );
         painter.circle_filled(pt, 4.5 * px, ink);
         painter.circle_stroke(pt, 4.5 * px, Stroke::new(1.5 * px, colors.text.to_color32()));
@@ -833,3 +793,4 @@ pub const REFERENCE: Reference = Reference {
     settings: &[],
     cases: &[],
 };
+        
