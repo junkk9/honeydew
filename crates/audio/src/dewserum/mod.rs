@@ -3,6 +3,8 @@
 pub mod modulation;
 pub mod wavetable;
 
+use std::sync::Arc;
+
 use crate::ProcessContext;
 use crate::biquad::{Biquad, Response};
 use crate::instrument::Instrument;
@@ -11,7 +13,10 @@ use modulation::{
     AdsrParams, CurvePreset, Envelope, Lfo, LfoCurve, LfoSettings, LfoTable, LfoTrig, ModDest,
     ModInputs, ModMatrix, SLOT_PARAMS, SLOTS, choice,
 };
-use wavetable::{Reader, TABLE_COUNT, WavetableBank, bank};
+use wavetable::{
+    CUSTOM_MENU_INDEX, CustomTable, Reader, TABLE_MENU_COUNT, WavetableBank, bank,
+    set_preview_custom,
+};
 
 pub const TICK: usize = 32;
 pub const MAX_VOICES: usize = 8;
@@ -19,6 +24,19 @@ pub const MAX_UNISON: usize = 12;
 pub const LFO_COUNT: usize = 4;
 pub const ENV_COUNT: usize = 4;
 const COMB_BUF_LEN: usize = 4096;
+
+/// Live analysis buffer layout passed to the UI every frame:
+/// `[0..128]` = recent output waveform samples for the Output Scope;
+/// `[128..144]` = live modulated target values from the active voice:
+/// 128: Cutoff norm (0..1), 129: Resonance (0..1),
+/// 130: Osc A WT Pos (0..1), 131: Osc B WT Pos (0..1),
+/// 132: Osc A Pitch (semitones), 133: Osc B Pitch (semitones),
+/// 134: Osc A Sync (0..1), 135: Osc B Sync (0..1),
+/// 136: Osc A FM Depth (0..1), 137: Osc A Detune (0..1),
+/// 138: Osc B Detune (0..1), 139: Osc A Level (0..1),
+/// 140: Osc B Level (0..1), 141: Active voice flag (1.0 / 0.0).
+pub const SCOPE_SAMPLES: usize = 128;
+pub const ANALYSIS_LEN: usize = 144;
 
 const MAX_DETUNE_SEMITONES: f32 = 1.0;
 const LFO_SMOOTH_SECONDS: f32 = 0.002;
@@ -198,6 +216,18 @@ fn unison_weights(n: usize, blend: f32, width: f32) -> ([f32; MAX_UNISON], [f32;
     (left, right)
 }
 
+#[derive(Clone, Copy, Default)]
+struct VoiceTelemetry {
+    cutoff_norm: f32,
+    resonance: f32,
+    wt_pos: [f32; 2],
+    pitch_mod: [f32; 2],
+    sync: [f32; 2],
+    fm_depth: f32,
+    detune: [f32; 2],
+    level: [f32; 2],
+}
+
 #[derive(Clone, Copy)]
 struct OscControl {
     table: usize,
@@ -240,7 +270,7 @@ impl Control {
             let unison = 1 + choice(p[at + param::UNISON], MAX_UNISON);
             let (left, right) = unison_weights(unison, p[at + param::BLEND], p[at + param::WIDTH]);
             OscControl {
-                table: choice(p[table_params[o]], TABLE_COUNT),
+                table: choice(p[table_params[o]], TABLE_MENU_COUNT),
                 level: p[at + param::LEVEL],
                 wt_pos: p[at + param::WT_POS],
                 semitones: semitones(p[at + param::PITCH]) + (2.0 * p[at + param::FINE] - 1.0),
@@ -282,8 +312,8 @@ impl Control {
             wheel,
         }
     }
-    }
-// ---------------------------------------------------------------------------------------------------------------------
+        }
+    // ---------------------------------------------------------------------------------------------------------------------
 // Voices
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -331,6 +361,7 @@ struct Voice {
     gain_step: [f32; 2],
     vel_gain: f32,
     pan_gain: [f32; 2],
+    telemetry: VoiceTelemetry,
     fresh: bool,
 }
 
@@ -362,6 +393,7 @@ impl Voice {
             gain_step: [0.0; 2],
             vel_gain: 0.0,
             pan_gain: [1.0; 2],
+            telemetry: VoiceTelemetry::default(),
             fresh: true,
         }
     }
@@ -415,10 +447,11 @@ impl Voice {
                 env.gate_off();
             }
         }
-}
-    fn update(
+                             }
+        fn update(
         &mut self,
         c: &Control,
+        custom: &[Option<Arc<CustomTable>>; 2],
         tables: &[LfoTable; LFO_COUNT],
         lfos: &[LfoSettings; LFO_COUNT],
         sample_rate: f32,
@@ -464,22 +497,31 @@ impl Voice {
             self.sync_mult[o] = (ratio * 65536.0) as u64;
 
             let morph_pos = (osc.wt_pos + m.get(WT_DEST[o])).clamp(0.0, 1.0);
-            let note = (pitch + osc.semitones + m.get(PITCH_DEST[o])).clamp(-48.0, 160.0);
+            let pitch_mod = m.get(PITCH_DEST[o]);
+            let note = (pitch + osc.semitones + pitch_mod).clamp(-48.0, 160.0);
             let detune = (osc.detune + m.get(DETUNE_DEST[o])).clamp(0.0, 1.0);
             let spread = detune * detune * MAX_DETUNE_SEMITONES;
+            let level = (osc.level + m.get(LEVEL_DEST[o])).clamp(0.0, 1.0);
+
+            self.telemetry.wt_pos[o] = morph_pos;
+            self.telemetry.pitch_mod[o] = pitch_mod;
+            self.telemetry.sync[o] = sync_val;
+            self.telemetry.detune[o] = detune;
+            self.telemetry.level[o] = level;
+
             for k in 0..osc.unison {
                 let semitone = note + spread * unison_position(osc.unison, k);
                 let freq = (440.0 * ((semitone - 69.0) / 12.0).exp2()).min(0.49 * sample_rate);
                 self.inc[o][k] =
                     (f64::from(freq) / f64::from(sample_rate) * 4_294_967_296.0) as u32;
                 let effective_freq = (freq * ratio).min(0.49 * sample_rate);
-                self.readers[o][k] = wt.reader(
-                    osc.table,
-                    WavetableBank::level_for(effective_freq, sample_rate),
-                    morph_pos,
-                );
+                let lvl = WavetableBank::level_for(effective_freq, sample_rate);
+                self.readers[o][k] = if osc.table == CUSTOM_MENU_INDEX {
+                    wt.reader_custom(custom[o].as_deref(), lvl, morph_pos)
+                } else {
+                    wt.reader(osc.table, lvl, morph_pos)
+                };
             }
-            let level = (osc.level + m.get(LEVEL_DEST[o])).clamp(0.0, 1.0);
             let target = level * level;
             if self.fresh {
                 self.gain[o] = target;
@@ -491,12 +533,16 @@ impl Voice {
 
         let fm_val = (c.fm_from_b + m.get(ModDest::OscAFm)).clamp(0.0, 1.0);
         self.fm_amount = fm_val * fm_val * 0.5;
+        self.telemetry.fm_depth = fm_val;
 
         let cutoff_oct = c.cutoff_oct
             + m.get(ModDest::Cutoff)
             + c.key_track * (pitch - 60.0) / 12.0;
         let cutoff = cutoff_oct.exp2().clamp(20.0, c.max_cutoff);
         let res = (c.resonance + m.get(ModDest::Resonance)).clamp(0.0, 1.0);
+        self.telemetry.cutoff_norm = ((cutoff.log2() - 20f32.log2()) / 10.0).clamp(0.0, 1.0);
+        self.telemetry.resonance = res;
+
         let q = 0.5 * 20f32.powf(res);
         let q24 = 0.5 * 8f32.powf(res);
 
@@ -577,7 +623,6 @@ impl Voice {
 
         #[allow(clippy::needless_range_loop)]
         for i in 0..n {
-            // 1. Render Oscillator B first (runs even when Level = 0 if FM is active)
             let gain_b = self.gain[1usize];
             let need_b = gain_b != 0.0 || self.gain_step[1usize] != 0.0 || use_fm;
             let (mut sum_bl, mut sum_br, mut mod_b) = (0.0f32, 0.0f32, 0.0f32);
@@ -596,7 +641,6 @@ impl Voice {
             }
             self.gain[1usize] = gain_b + self.gain_step[1usize];
 
-            // 2. Render Oscillator A (with optional FM phase modulation from B)
             let gain_a = self.gain[0usize];
             let (mut sum_al, mut sum_ar) = (0.0f32, 0.0f32);
             if gain_a != 0.0 || self.gain_step[0usize] != 0.0 {
@@ -635,8 +679,8 @@ impl Voice {
             mix[1usize][i] += fr * amp * self.pan_gain[1usize];
         }
     }
-}
-// ---------------------------------------------------------------------------------------------------------------------
+    }
+  // ---------------------------------------------------------------------------------------------------------------------
 // The instrument
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -644,12 +688,14 @@ pub struct DewSerum {
     sample_rate: f32,
     params: [f32; PARAM_COUNT],
     control: Control,
+    custom_tables: [Option<Arc<CustomTable>>; 2],
     dirty: bool,
     lfo_tables: [LfoTable; LFO_COUNT],
     curve_dirty: [bool; LFO_COUNT],
     lfo_settings: [LfoSettings; LFO_COUNT],
     free_phases: [f64; LFO_COUNT],
     voices: [Voice; MAX_VOICES],
+    last_voice: usize,
     rng: Rng,
     note_count: u64,
     tempo_bpm: f32,
@@ -657,6 +703,9 @@ pub struct DewSerum {
     tick_pos: usize,
     master_now: f32,
     master_step: f32,
+    scope_ring: [f32; SCOPE_SAMPLES],
+    scope_pos: usize,
+    analysis_buf: [f32; ANALYSIS_LEN],
 }
 
 impl DewSerum {
@@ -694,19 +743,30 @@ impl DewSerum {
             params,
             master_now: control.master,
             control,
+            custom_tables: [None, None],
             dirty: false,
             lfo_tables,
             curve_dirty: [false; LFO_COUNT],
             lfo_settings,
             free_phases: [0.0; LFO_COUNT],
             voices: std::array::from_fn(|_| Voice::new()),
+            last_voice: 0,
             rng: Rng(0x9E37_79B9),
             note_count: 0,
             tempo_bpm: 120.0,
             song_beat: 0.0,
             tick_pos: 0,
             master_step: 0.0,
+            scope_ring: [0.0; SCOPE_SAMPLES],
+            scope_pos: 0,
+            analysis_buf: [0.0; ANALYSIS_LEN],
         }
+    }
+
+    pub fn set_custom_wavetable(&mut self, osc: usize, table: Option<Arc<CustomTable>>) {
+        let idx = osc.min(1);
+        set_preview_custom(idx, table.clone());
+        self.custom_tables[idx] = table;
     }
 
     fn refresh(&mut self) {
@@ -746,23 +806,23 @@ impl DewSerum {
                 TICK,
             )
         })
-    }
-
-    fn tick(&mut self) {
+                }
+              fn tick(&mut self) {
         self.refresh();
         self.lfo_settings = self.lfo_settings_now();
         for l in 0..LFO_COUNT {
             self.free_phases[l] = (self.free_phases[l] + self.lfo_settings[l].step).rem_euclid(1.0);
         }
-        let (control, tables, lfos, rate) = (
+        let (control, custom, tables, lfos, rate) = (
             &self.control,
+            &self.custom_tables,
             &self.lfo_tables,
             &self.lfo_settings,
             self.sample_rate,
         );
         for voice in &mut self.voices {
             if !voice.env1.is_idle() {
-                voice.update(control, tables, lfos, rate, true);
+                voice.update(control, custom, tables, lfos, rate, true);
             }
         }
         self.master_step = (self.control.master - self.master_now) / TICK as f32;
@@ -783,10 +843,52 @@ impl DewSerum {
         let lfos = self.lfo_settings_now();
         self.lfo_settings = lfos;
         let index = self.pick_voice(self.control.voice_limit);
+        self.last_voice = index;
         self.note_count += 1;
         let voice = &mut self.voices[index];
         voice.start(key, velocity, pan, self.note_count, &lfos, &mut self.rng);
-        voice.update(&self.control, &self.lfo_tables, &lfos, self.sample_rate, false);
+        voice.update(
+            &self.control,
+            &self.custom_tables,
+            &self.lfo_tables,
+            &lfos,
+            self.sample_rate,
+            false,
+        );
+    }
+
+    fn update_analysis(&mut self) {
+        for i in 0..SCOPE_SAMPLES {
+            self.analysis_buf[i] = self.scope_ring[(self.scope_pos + i) % SCOPE_SAMPLES];
+        }
+        let active_idx = if !self.voices[self.last_voice].env1.is_idle() {
+            Some(self.last_voice)
+        } else {
+            self.voices.iter().position(|v| !v.env1.is_idle())
+        };
+        if let Some(idx) = active_idx {
+            let t = self.voices[idx].telemetry;
+            let base = SCOPE_SAMPLES;
+            let vals = [
+                t.cutoff_norm,
+                t.resonance,
+                t.wt_pos[0usize],
+                t.wt_pos[1usize],
+                t.pitch_mod[0usize],
+                t.pitch_mod[1usize],
+                t.sync[0usize],
+                t.sync[1usize],
+                t.fm_depth,
+                t.detune[0usize],
+                t.detune[1usize],
+                t.level[0usize],
+                t.level[1usize],
+                1.0,
+            ];
+            self.analysis_buf[base..base + vals.len()].copy_from_slice(&vals);
+        } else {
+            self.analysis_buf[SCOPE_SAMPLES..ANALYSIS_LEN].fill(0.0);
+        }
     }
 }
 
@@ -836,6 +938,8 @@ impl Instrument for DewSerum {
         self.tick_pos = 0;
         self.master_now = self.control.master;
         self.master_step = 0.0;
+        self.scope_ring.fill(0.0);
+        self.analysis_buf.fill(0.0);
     }
 
     fn process(&mut self, left: &mut [f32], right: &mut [f32], context: ProcessContext) {
@@ -861,13 +965,20 @@ impl Instrument for DewSerum {
             }
             for i in 0..n {
                 self.master_now += self.master_step;
-                left[done + i] += mix[0usize][i] * self.master_now;
-                right[done + i] += mix[1usize][i] * self.master_now;
+                let out_l = mix[0usize][i] * self.master_now;
+                let out_r = mix[1usize][i] * self.master_now;
+                left[done + i] += out_l;
+                right[done + i] += out_r;
+                if (done + i) & 1 == 0 {
+                    self.scope_ring[self.scope_pos] = 0.5 * (out_l + out_r);
+                    self.scope_pos = (self.scope_pos + 1) % SCOPE_SAMPLES;
+                }
             }
             self.tick_pos = (self.tick_pos + n) % TICK;
             self.song_beat += n as f64 * beats_per_frame;
             done += n;
         }
+        self.update_analysis();
     }
 
     fn set_tempo_bpm(&mut self, bpm: f32) {
@@ -894,5 +1005,9 @@ impl Instrument for DewSerum {
             voice.slide = [finite(pitch), finite(pan), finite(velocity)];
         }
     }
-                }
-        
+
+    fn analysis(&self) -> &[f32] {
+        &self.analysis_buf
+    }
+        }
+                
