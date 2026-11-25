@@ -2224,7 +2224,10 @@ impl RackPanel {
             Some(Press::Stepped) => actions.replace_song = true,
             None => {}
         }
-        if edits.sample || three_osc::custom_picked(module, &edits.changed) {
+             if edits.sample
+         || three_osc::custom_picked(module, &edits.changed)
+         || crate::panels::inst::dew_serum::custom_picked(module, &edits.changed)
+        {
             actions.module_sample = Some(id);
         }
         self.report(actions, index, module, edits.changed);
@@ -2527,6 +2530,9 @@ impl RackPanel {
         }
         if module.type_id == three_osc::TYPE_ID {
             three_osc::wire(module, state);
+                 if module.type_id == crate::panels::inst::dew_serum::TYPE_ID {
+         crate::panels::inst::dew_serum::wire(module, state);
+                 }
         }
         if module.type_id == slicer::TYPE_ID {
             slicer::wire(module, state);
