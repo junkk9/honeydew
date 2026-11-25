@@ -9,7 +9,7 @@ use super::samples::{sampler_zones, shape_key};
 use crate::flm::sf2d::Sf2d;
 use crate::panels::cstm::settings_from_cstm;
 use crate::params::{Role, module_spec};
-use crate::sample_cache::SampleCache;
+use crate::sample_cache::SampleCache, SampleKey;
 use crate::song::plugin::PLUGIN_INSTRUMENT;
 use crate::song::{Channel, ModuleInstance, TimeSig};
 use honeydew_audio::dw_sampler::{DwSampler, DwZone};
@@ -55,7 +55,7 @@ fn instrument(
             )))
         }
         23 => Some(Box::new(SuperSaw::new(sample_rate))),
-        53 => Some(Box::new(DewSerum::new(sample_rate))),
+        53 => Some(Box::new(dew_serum(module, sample_rate, samples, origin))),
      
         33 => Some(Box::new(super::slicer::instrument(
             channel,
@@ -120,6 +120,36 @@ fn gm_synth(module: &ModuleInstance, sample_rate: f32) -> GmSynth {
     {
         gmsynth::prepare_setting(key, value);
         synth.set_setting(key, value);
+    }
+    synth
+fn dew_serum(
+    module: &ModuleInstance,
+    sample_rate: f32,
+    samples: &SampleCache,
+    origin: &mut DefaultHasher,
+) -> DewSerum {
+    let mut synth = DewSerum::new(sample_rate);
+    module.file.custom_data.hash(origin);
+    for osc in 0..2 {
+        let table = super::samples::dewserum_table_path(module, osc)
+            .map(|path| SampleKey::of_path(&path))
+            .and_then(|key| samples.pcm(&key))
+            .and_then(|pcm| {
+                let mono: Vec<f32> = match &pcm.right {
+                    Some(r) => pcm
+                        .left
+                        .iter()
+                        .zip(r.iter())
+                        .map(|(&a, &b)| 0.5 * (a + b))
+                        .collect(),
+                    None => pcm.left.to_vec(),
+                };
+                honeydew_audio::dewserum::wavetable::CustomTable::from_samples(&mono)
+            });
+        if let Some(ref tbl) = table {
+            Arc::as_ptr(tbl).hash(origin);
+        }
+        synth.set_custom_wavetable(osc, table);
     }
     synth
 }
