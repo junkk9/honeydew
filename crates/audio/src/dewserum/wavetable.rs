@@ -329,7 +329,7 @@ impl WavetableBank {
                 for (out, &sample) in table.iter_mut().zip(&acc) {
                     *out = sample as f32;
                 }
-                table[FRAME_LEN] = table;
+                table[FRAME_LEN] = table[0];
             }
             let full = (frame * MIP_LEVELS) * STRIDE;
             let peak = basic_data[full..full + FRAME_LEN]
