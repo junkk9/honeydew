@@ -449,59 +449,7 @@ impl Voice {
             }
         }
                              }
-        fn update(
-        &mut self,
-        c: &Control,
-        custom: &[Option<Arc<CustomTable>>; 2],
-        tables: &[LfoTable; LFO_COUNT],
-        lfos: &[LfoSettings; LFO_COUNT],
-        sample_rate: f32,
-        advance: bool,
-    ) {
-        if advance {
-            for (env, params) in self.env_mod.iter_mut().zip(&c.env_mod) {
-                env.advance(params);
-            }
-            for l in 0..LFO_COUNT {
-                let one_shot = lfos[l].trig == LfoTrig::Env;
-                self.lfo[l].advance(lfos[l].step, one_shot);
-            }
-        }
-        for l in 0..LFO_COUNT {
-            let raw = self.lfo[l].value(&tables[l]);
-            if self.fresh {
-                self.lfo_smooth[l] = raw;
-            } else {
-                self.lfo_smooth[l] += (raw - self.lfo_smooth[l]) * c.lfo_coef;
-            }
-        }
-        let pitch = f32::from(self.note) + self.slide[0usize] + c.bend;
-        let inputs = ModInputs {
-            lfo: self.lfo_smooth,
-            env: [
-                self.env1.level(),
-                self.env_mod[0usize].level(),
-                self.env_mod[1usize].level(),
-                self.env_mod[2usize].level(),
-            ],
-            velocity: self.velocity,
-            key: ModInputs::key_value(pitch),
-            wheel: c.wheel,
-        };
-        let m = c.matrix.evaluate(&inputs);
-
-        let wt = bank();
-        for o in 0..2 {
-            let osc = &c.osc[o];
-            let sync_val = (osc.sync + m.get(SYNC_DEST[o])).clamp(0.0, 1.0);
-            let ratio = 1.0 + 15.0 * sync_val * sync_val;
-            self.sync_mult[o] = (ratio * 65536.0) as u64;
-
-            let morph_pos = (osc.wt_pos + m.get(WT_DEST[o])).clamp(0.0, 1.0);
-            let pitch_mod = m.get(PITCH_DEST[o]);
-            let note = (pitch + osc.semitones + pitch_mod).clamp(-48.0, 160.0);
-            let detune = (osc.detune + m.get(DETUNE_DEST[o])).clamp(0.0, 1.0);
-            let spread = detune * detune * MAX_DETUNE_SEMITONES;
+        
     fn update(
         &mut self,
         c: &Control,
