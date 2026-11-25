@@ -502,8 +502,60 @@ impl Voice {
             let note = (pitch + osc.semitones + pitch_mod).clamp(-48.0, 160.0);
             let detune = (osc.detune + m.get(DETUNE_DEST[o])).clamp(0.0, 1.0);
             let spread = detune * detune * MAX_DETUNE_SEMITONES;
+    fn update(
+        &mut self,
+        c: &Control,
+        tables: &[LfoTable; LFO_COUNT],
+        lfos: &[LfoSettings; LFO_COUNT],
+        sample_rate: f32,
+        advance: bool,
+    ) {
+        if advance {
+            for (env, params) in self.env_mod.iter_mut().zip(&c.env_mod) {
+                env.advance(params);
+            }
+            for l in 0..LFO_COUNT {
+                let one_shot = lfos[l].trig == LfoTrig::Env;
+                self.lfo[l].advance(lfos[l].step, one_shot);
+            }
+        }
+        for l in 0..LFO_COUNT {
+            let raw = self.lfo[l].value(&tables[l]);
+            if self.fresh {
+                self.lfo_smooth[l] = raw;
+            } else {
+                self.lfo_smooth[l] += (raw - self.lfo_smooth[l]) * c.lfo_coef;
+            }
+        }
+        let pitch = f32::from(self.note) + self.slide[0usize] + c.bend;
+        let inputs = ModInputs {
+            lfo: self.lfo_smooth,
+            env: [
+                self.env1.level(),
+                self.env_mod[0usize].level(),
+                self.env_mod[1usize].level(),
+                self.env_mod[2usize].level(),
+            ],
+            velocity: self.velocity,
+            key: ModInputs::key_value(pitch),
+            wheel: c.wheel,
+        };
+        let m = c.matrix.evaluate(&inputs);
+
+        for o in 0..2 {
+            let osc = &c.osc[o];
+            let sync_val = (osc.sync + m.get(SYNC_DEST[o])).clamp(0.0, 1.0);
+            let ratio = 1.0 + 15.0 * sync_val * sync_val;
+            self.sync_mult[o] = (ratio * 65536.0) as u64;
+
+            let morph_pos = (osc.wt_pos + m.get(WT_DEST[o])).clamp(0.0, 1.0);
+            let pitch_mod = m.get(PITCH_DEST[o]);
+            let note = (pitch + osc.semitones + pitch_mod).clamp(-48.0, 160.0);
+            let detune = (osc.detune + m.get(DETUNE_DEST[o])).clamp(0.0, 1.0);
+            let spread = detune * detune * MAX_DETUNE_SEMITONES;
             let level = (osc.level + m.get(LEVEL_DEST[o])).clamp(0.0, 1.0);
 
+            self.morph_pos[o] = morph_pos;
             self.telemetry.wt_pos[o] = morph_pos;
             self.telemetry.pitch_mod[o] = pitch_mod;
             self.telemetry.sync[o] = sync_val;
@@ -516,12 +568,7 @@ impl Voice {
                 self.inc[o][k] =
                     (f64::from(freq) / f64::from(sample_rate) * 4_294_967_296.0) as u32;
                 let effective_freq = (freq * ratio).min(0.49 * sample_rate);
-                let lvl = WavetableBank::level_for(effective_freq, sample_rate);
-                self.readers[o][k] = if osc.table == CUSTOM_MENU_INDEX {
-                    wt.reader_custom(custom[o].as_deref(), lvl, morph_pos)
-                } else {
-                    wt.reader(osc.table, lvl, morph_pos)
-                };
+                self.mip_level[o][k] = WavetableBank::level_for(effective_freq, sample_rate);
             }
             let target = level * level;
             if self.fresh {
@@ -616,11 +663,31 @@ impl Voice {
         }
     }
 
-    fn render(&mut self, n: usize, c: &Control, mix: &mut [[f32; TICK]; 2]) {
+        fn render(
+        &mut self,
+        n: usize,
+        c: &Control,
+        custom: &[Option<Arc<CustomTable>>; 2],
+        mix: &mut [[f32; TICK]; 2],
+    ) {
         let drive = c.drive;
         let use_drive = drive > 1.001;
         let fm_amt = self.fm_amount;
         let use_fm = fm_amt > 1e-6;
+
+        let wt = bank();
+        let readers: [[Reader<'_>; MAX_UNISON]; 2] = std::array::from_fn(|o| {
+            let osc = &c.osc[o];
+            let pos = self.morph_pos[o];
+            std::array::from_fn(|k| {
+                let lvl = self.mip_level[o][k];
+                if osc.table == CUSTOM_MENU_INDEX {
+                    wt.reader_custom(custom[o].as_deref(), lvl, pos)
+                } else {
+                    wt.reader(osc.table, lvl, pos)
+                }
+            })
+        });
 
         #[allow(clippy::needless_range_loop)]
         for i in 0..n {
@@ -634,7 +701,7 @@ impl Voice {
                     let phase = self.phase[1usize][k].wrapping_add(self.inc[1usize][k]);
                     self.phase[1usize][k] = phase;
                     let synced = ((u64::from(phase) * mult_b) >> 16) as u32;
-                    let s = self.readers[1usize][k].read(synced);
+                    let s = readers[1usize][k].read(synced);
                     sum_bl += s * osc_b.left[k];
                     sum_br += s * osc_b.right[k];
                 }
@@ -656,7 +723,7 @@ impl Voice {
                     let phase = self.phase[0usize][k].wrapping_add(self.inc[0usize][k]);
                     self.phase[0usize][k] = phase;
                     let synced = ((u64::from(phase) * mult_a) >> 16) as u32;
-                    let s = self.readers[0usize][k].read(synced.wrapping_add(fm_offset));
+                    let s = readers[0usize][k].read(synced.wrapping_add(fm_offset));
                     sum_al += s * osc_a.left[k];
                     sum_ar += s * osc_a.right[k];
                 }
