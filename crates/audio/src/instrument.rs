@@ -247,6 +247,10 @@ impl InstrumentModule {
     pub fn meter(&self) -> MeterSnapshot {
         self.meter
     }
+    /// Live telemetry/waveform samples from the wrapped instrument.
+    pub fn analysis(&self) -> &[f32] {
+        self.instrument.analysis()
+    }
 }
 
 #[cfg(test)]
