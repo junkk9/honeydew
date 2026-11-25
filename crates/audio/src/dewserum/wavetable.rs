@@ -1,14 +1,18 @@
-//! DewSerum's multi-wavetable bank: `Basic Shapes` plus 14 embedded Serum-format `.wav` tables
-//! (2048 samples per frame), band-limited into [`MIP_LEVELS`] anti-aliased copies on first load.
+//! DewSerum's multi-wavetable bank: `Basic Shapes`, 13 embedded Serum-format `.wav` tables,
+//! plus 2 dynamic per-oscillator user `.wav` slots (`OSC A` and `OSC B` from `My Wavetables`).
 
 use std::f64::consts::{PI, TAU};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock, RwLock};
 
 pub const FRAME_LEN: usize = 2048;
 pub const BASIC_FRAMES: usize = 4;
 pub const MAX_WAV_FRAMES: usize = 64;
-pub const TABLE_COUNT: usize = 14;
-pub const TABLE_NAMES: [&str; TABLE_COUNT] = [
+pub const BUILTIN_TABLE_COUNT: usize = 14;
+/// Menu items: 0..14 built-ins + 14 (`Custom (My Wavetables)`).
+pub const TABLE_MENU_COUNT: usize = 15;
+pub const CUSTOM_MENU_INDEX: usize = 14;
+
+pub const TABLE_NAMES: [&str; TABLE_MENU_COUNT] = [
     "Basic Shapes",
     "Analog PWM 02",
     "Analog PWM 05",
@@ -23,9 +27,10 @@ pub const TABLE_NAMES: [&str; TABLE_COUNT] = [
     "Hyper 05",
     "Hyper 06",
     "Hyper 07",
+    "Custom (My Wavetables)",
 ];
 
-const EMBEDDED_WAVS: [&[u8]; TABLE_COUNT - 1] = [
+const EMBEDDED_WAVS: [&[u8]; BUILTIN_TABLE_COUNT - 1] = [
     include_bytes!("wtables/Analog PWM Custom 02.wav"),
     include_bytes!("wtables/Analog PWM Custom 05.wav"),
     include_bytes!("wtables/Analog PWM Square 05.wav"),
@@ -70,7 +75,7 @@ fn basic_amplitude(frame: usize, h: usize) -> f64 {
         _ => 0.0,
     }
 }
-fn parse_wav_samples(bytes: &[u8]) -> Vec<f32> {
+pub fn parse_wav_samples(bytes: &[u8]) -> Vec<f32> {
     if bytes.len() < 44 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
         return Vec::new();
     }
@@ -197,7 +202,6 @@ fn build_frame_mips(samples: &[f32], out: &mut [f32]) {
         base_re[i] = f64::from(samples[i]);
     }
     radix2_fft(&mut base_re, &mut base_im, false);
-    // Remove DC offset so wavetables never introduce clicks
     base_re[0] = 0.0;
     base_im[0] = 0.0;
 
@@ -229,7 +233,61 @@ fn build_frame_mips(samples: &[f32], out: &mut [f32]) {
     for s in out.iter_mut() {
         *s *= scale;
     }
-                                                     }
+}
+pub struct CustomTable {
+    data: Box<[f32]>,
+    frame_count: usize,
+}
+
+impl CustomTable {
+    pub fn from_samples(samples: &[f32]) -> Option<Arc<Self>> {
+        let raw_frames = samples.len() / FRAME_LEN;
+        if raw_frames == 0 {
+            return None;
+        }
+        let count = raw_frames.min(MAX_WAV_FRAMES);
+        let mut buf = vec![0.0f32; count * MIP_LEVELS * STRIDE];
+        for f in 0..count {
+            let src_idx = if count == 1 {
+                0
+            } else {
+                f * (raw_frames - 1) / (count - 1)
+            };
+            let src = &samples[src_idx * FRAME_LEN..(src_idx + 1) * FRAME_LEN];
+            let dst_off = f * MIP_LEVELS * STRIDE;
+            build_frame_mips(src, &mut buf[dst_off..dst_off + MIP_LEVELS * STRIDE]);
+        }
+        Some(Arc::new(Self {
+            data: buf.into_boxed_slice(),
+            frame_count: count,
+        }))
+    }
+
+    pub fn from_wav_bytes(bytes: &[u8]) -> Option<Arc<Self>> {
+        let samples = parse_wav_samples(bytes);
+        Self::from_samples(&samples)
+    }
+
+    fn slice(&self, frame: usize, level: usize) -> &[f32] {
+        let f = frame.min(self.frame_count.saturating_sub(1));
+        let offset = (f * MIP_LEVELS + level.min(MIP_LEVELS - 1)) * STRIDE;
+        &self.data[offset..offset + STRIDE]
+    }
+}
+
+/// Global preview cache so the UI waveform preview matches the loaded custom wavetables on OSC A and OSC B.
+fn custom_preview_slot(osc: usize) -> &'static RwLock<Option<Arc<CustomTable>>> {
+    static SLOTS: [OnceLock<RwLock<Option<Arc<CustomTable>>>>; 2] =
+        [OnceLock::new(), OnceLock::new()];
+    SLOTS[osc.min(1)].get_or_init(|| RwLock::new(None))
+}
+
+pub fn set_preview_custom(osc: usize, table: Option<Arc<CustomTable>>) {
+    if let Ok(mut guard) = custom_preview_slot(osc).write() {
+        *guard = table;
+    }
+}
+
 struct TableMeta {
     start_frame: usize,
     frame_count: usize,
@@ -237,7 +295,7 @@ struct TableMeta {
 
 pub struct WavetableBank {
     data: Box<[f32]>,
-    tables: [TableMeta; TABLE_COUNT],
+    tables: [TableMeta; BUILTIN_TABLE_COUNT],
 }
 
 impl WavetableBank {
@@ -248,7 +306,6 @@ impl WavetableBank {
             frame_count: BASIC_FRAMES,
         });
 
-        // Table 0: Basic Shapes (Sine, Triangle, Saw, Square)
         let sine: Vec<f64> = (0..FRAME_LEN)
             .map(|n| (TAU * n as f64 / FRAME_LEN as f64).sin())
             .collect();
@@ -272,7 +329,7 @@ impl WavetableBank {
                 for (out, &sample) in table.iter_mut().zip(&acc) {
                     *out = sample as f32;
                 }
-                table[FRAME_LEN] = table[0usize];
+                table[FRAME_LEN] = table;
             }
             let full = (frame * MIP_LEVELS) * STRIDE;
             let peak = basic_data[full..full + FRAME_LEN]
@@ -287,7 +344,6 @@ impl WavetableBank {
         data.extend_from_slice(&basic_data);
         let mut total_frames = BASIC_FRAMES;
 
-        // Tables 1..15: Embedded Serum-format .wav files
         for (idx, &wav_bytes) in EMBEDDED_WAVS.iter().enumerate() {
             let table_idx = idx + 1;
             let samples = parse_wav_samples(wav_bytes);
@@ -345,7 +401,7 @@ impl WavetableBank {
     }
 
     pub fn morph_for(&self, table_idx: usize, pos: f32) -> Morph {
-        let meta = &self.tables[table_idx.min(TABLE_COUNT - 1)];
+        let meta = &self.tables[table_idx.min(BUILTIN_TABLE_COUNT - 1)];
         let pos = if pos.is_finite() {
             pos.clamp(0.0, 1.0)
         } else {
@@ -374,6 +430,33 @@ impl WavetableBank {
             a: self.table_slice(morph.lo, level),
             b: self.table_slice(morph.hi, level),
             mix: morph.mix,
+        }
+    }
+
+    pub fn reader_custom<'a>(
+        &'a self,
+        custom: Option<&'a CustomTable>,
+        level: usize,
+        pos: f32,
+    ) -> Reader<'a> {
+        let Some(tbl) = custom else {
+            return self.reader(0, level, pos);
+        };
+        let pos = if pos.is_finite() {
+            pos.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        if tbl.frame_count <= 1 {
+            let s = tbl.slice(0, level);
+            return Reader { a: s, b: s, mix: 0.0 };
+        }
+        let x = pos * (tbl.frame_count - 1) as f32;
+        let lo = (x as usize).min(tbl.frame_count - 2);
+        Reader {
+            a: tbl.slice(lo, level),
+            b: tbl.slice(lo + 1, level),
+            mix: x - lo as f32,
         }
     }
 }
@@ -411,10 +494,22 @@ impl Reader<'_> {
     }
 }
 
-pub fn wave_preview(table_idx: usize, pos: f32, out: &mut [f32]) {
-    let reader = bank().reader(table_idx, PREVIEW_LEVEL, pos);
+pub fn wave_preview(osc: usize, table_idx: usize, pos: f32, out: &mut [f32]) {
+    let b = bank();
     let n = out.len();
+    if table_idx == CUSTOM_MENU_INDEX
+        && let Ok(guard) = custom_preview_slot(osc).read()
+        && let Some(tbl) = guard.as_deref()
+    {
+        let reader = b.reader_custom(Some(tbl), PREVIEW_LEVEL, pos);
+        for (k, y) in out.iter_mut().enumerate() {
+            *y = reader.read((k as f64 / n as f64 * PHASE_SCALE) as u32);
+        }
+        return;
+    }
+    let reader = b.reader(table_idx, PREVIEW_LEVEL, pos);
     for (k, y) in out.iter_mut().enumerate() {
         *y = reader.read((k as f64 / n as f64 * PHASE_SCALE) as u32);
     }
-}
+        }
+                    
