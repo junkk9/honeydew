@@ -135,15 +135,16 @@ fn dew_serum(
         let table = super::samples::dewserum_table_path(module, osc)
             .map(|path| SampleKey::of_path(&path))
             .and_then(|key| samples.pcm(&key))
-            .and_then(|pcm| {
-        let mono: Vec<f32> = if pcm.right.is_empty() {
-                    pcm.left.to_vec()
-                } else {
-                    pcm.left
+                        .and_then(|pcm| pcm.whole())
+            .and_then(|data| {
+                let mono: Vec<f32> = match &data.right {
+                    Some(r) => data
+                        .left
                         .iter()
-                        .zip(pcm.right.iter())
+                        .zip(r.iter())
                         .map(|(&a, &b)| 0.5 * (a + b))
-                        .collect()
+                        .collect(),
+                    None => data.left.to_vec(),
                 };
                 honeydew_audio::dewserum::wavetable::CustomTable::from_samples(&mono)
             });
