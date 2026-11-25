@@ -21,6 +21,7 @@ use crate::ui::main_menu::{SONGS_FOLDER, SongEntry, SongLibrary};
 /// The user folders samples come from.
 pub const SAMPLES_FOLDER: &str = "My Samples";
 pub const RECORDINGS_FOLDER: &str = "My Recordings";
+pub const WAVETABLES_FOLDER: &str = "My Wavetables";
 /// The audio files a drum pad takes, without the dot, matched without case.
 pub const SAMPLE_EXTS: [&str; 4] = ["wav", "flac", "mp3", "ogg"];
 /// The user folder MIDI files go to.
@@ -29,7 +30,7 @@ pub const MIDI_FOLDER: &str = "My MIDI";
 pub const INSTRUMENTS_FOLDER: &str = "My Instruments";
 pub const TRACKS_FOLDER: &str = "My Tracks";
 /// The user folder's own folders, made at every start where they are missing ([`make_user_folders`]).
-pub const MY_FOLDERS: [&str; 11] = [
+pub const MY_FOLDERS: [&str; 12] = [
     CHORD_SETS_FOLDER,
     DRUMSETS_FOLDER,
     INSTRUMENTS_FOLDER,
@@ -41,6 +42,7 @@ pub const MY_FOLDERS: [&str; 11] = [
     SONGS_FOLDER,
     SOUNDFONTS_FOLDER,
     TRACKS_FOLDER,
+    WAVETABLES_FOLDER,
 ];
 /// The flash after an `Import`.
 pub const IMPORTED: &str = "Successfully imported";
@@ -317,7 +319,11 @@ impl SongLibrary for Samples<'_> {
                 is_folder: true,
                 recency: 0,
             };
-            return Ok(vec![folder(SAMPLES_FOLDER), folder(RECORDINGS_FOLDER)]);
+            return Ok(vec![
+                folder(SAMPLES_FOLDER),
+                folder(RECORDINGS_FOLDER),
+                folder(WAVETABLES_FOLDER),
+            ]);
         }
         let mut entries = self.0.preset_library(&SAMPLE_EXTS).list(Some(dir))?;
         entries.sort_by(|a, b| a.path.cmp(&b.path));
