@@ -179,7 +179,7 @@ fn osc_page(
 
 fn filter_page() -> Part {
     vstack([
-        list(30100, FilterKind::NAMES.join(" · "), Bar::Bottom)
+        list(30100, &FilterKind::NAMES.join(" · "), Bar::Bottom)
             .p(param::FILTER_TYPE)
             .h(Size::U(1.15)),
         display(30200)
@@ -221,7 +221,7 @@ fn env_page() -> Part {
         })
         .collect();
 
-    let mut children = vec![list(40100, ENV_TABS, Bar::Bottom).s(ENV_TAB).h(Size::U(1.15))];
+    let mut children = vec![list(40100, ENV_TABS, Bar::Bottom).h(Size::U(1.15))];
     children.extend(sub_pages);
     vstack(children)
 }
@@ -253,7 +253,7 @@ fn lfo_page() -> Part {
         })
         .collect();
 
-    let mut children = vec![list(50100, LFO_TABS, Bar::Bottom).s(LFO_TAB).h(Size::U(1.15))];
+    let mut children = vec![list(50100, LFO_TABS, Bar::Bottom).h(Size::U(1.15))];
     children.extend(sub_pages);
     vstack(children)
 }
@@ -270,7 +270,7 @@ fn matrix_page() -> Part {
     };
 
     vstack([
-        list(60100, MATRIX_TABS, Bar::Bottom).s(MAT_TAB).h(Size::U(1.15)),
+        list(60100, MATRIX_TABS, Bar::Bottom).h(Size::U(1.15)),
         vstack([slot_row(0), slot_row(1), slot_row(2), slot_row(3)])
             .show(Show::Setting(60100, 0)),
         vstack([slot_row(4), slot_row(5), slot_row(6), slot_row(7)])
