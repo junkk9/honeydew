@@ -13,7 +13,7 @@ use honeydew_audio::dewserum::{ANALYSIS_LEN, ENV_COUNT, FilterKind, LFO_COUNT, S
 use crate::flm::chunk::{ChunkIter, ChunkWriter, ContentPath};
 use crate::metrics::FontSize;
 use crate::panels::build::*;
-use crate::panels::feed;
+use crate::panels::live_analysis;
 use crate::ui::UiCtx;
 
 pub const TYPE_ID: u16 = 53;
@@ -307,7 +307,8 @@ fn draw_output_scope(
         return Vec::new();
     }
 
-    let slab = feed(ui, module.instance_id).map(|(_, a)| a).unwrap_or(&[]);
+     let slab_arc = live_analysis(ui, module.instance_id);
+let slab = slab_arc.as_deref().unwrap_or(&[]);
     if slab.len() >= SCOPE_SAMPLES {
         let samples = &slab[0..SCOPE_SAMPLES];
         let points: Vec<Pos2> = samples
@@ -405,7 +406,8 @@ fn draw_wave_for(
     painter.rect_filled(r, 4.0 * px, colors.control_fill.to_color32());
     painter.hline(r.x_range(), r.center().y, Stroke::new(px, colors.background.to_color32()));
 
-    let slab = feed(ui, module.instance_id).map(|(_, a)| a).unwrap_or(&[]);
+     let slab_arc = live_analysis(ui, module.instance_id);
+ let slab = slab_arc.as_deref().unwrap_or(&[]);
     let active = slab.len() >= ANALYSIS_LEN && slab[T_ACTIVE] > 0.5;
 
     let table_idx = choice(
@@ -493,7 +495,8 @@ fn draw_filter_curve(
         painter.vline(inner.left() + g * inner.width(), inner.y_range(), grid);
     }
 
-    let slab = feed(ui, module.instance_id).map(|(_, a)| a).unwrap_or(&[]);
+     let slab_arc = live_analysis(ui, module.instance_id);
+ let slab = slab_arc.as_deref().unwrap_or(&[]);
     let active = slab.len() >= ANALYSIS_LEN && slab[T_ACTIVE] > 0.5;
 
     let kind = FilterKind::from_param(module.params.get(param::FILTER_TYPE).copied().unwrap_or(0.0));
