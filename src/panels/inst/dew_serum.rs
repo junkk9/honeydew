@@ -13,7 +13,7 @@ use honeydew_audio::dewserum::{ANALYSIS_LEN, ENV_COUNT, FilterKind, LFO_COUNT, S
 use crate::flm::chunk::{ChunkIter, ChunkWriter, ContentPath};
 use crate::metrics::FontSize;
 use crate::panels::build::*;
-use crate::panels::fx::feed;
+use crate::panels::feed;
 use crate::ui::UiCtx;
 
 pub const TYPE_ID: u16 = 53;
