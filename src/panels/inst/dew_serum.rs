@@ -1,57 +1,168 @@
-use eframe::egui::{Color32, Id, Pos2, Rect, Sense, Shape, Stroke, Ui, pos2, vec2};
+//! DewSerum panel (type 53), card 16.5 U.
+//! Features:
+//! - Persistent top bar with live Output Scope oscilloscope across every tab
+//! - 14 built-in wavetables + Custom `.wav` loader (`My Wavetables`) for OSC A & OSC B
+//! - Real-time modulation animation on Filter curve (with live Hz readout) and modulated wave displays
+
+use std::f32::consts::PI;
+use std::path::Path;
+
+use eframe::egui::{Align2, Color32, Id, Pos2, Rect, Sense, Shape, Stroke, Ui, pos2, vec2};
 use honeydew_audio::dewserum::modulation::{
-    CURVE_PARAMS, CurvePreset, LfoCurve, MAX_POINTS, lfo_preview,
+    CURVE_PARAMS, CurvePreset, LfoCurve, MAX_POINTS, SLOT_PARAMS, SLOTS, choice,
 };
-use honeydew_audio::dewserum::wavetable::wave_preview;
-use honeydew_audio::dewserum::{ENV_COUNT, FilterKind, LFO_COUNT, param};
+use honeydew_audio::dewserum::wavetable::{CUSTOM_MENU_INDEX, TABLE_MENU_COUNT, wave_preview};
+use honeydew_audio::dewserum::{ANALYSIS_LEN, ENV_COUNT, FilterKind, LFO_COUNT, SCOPE_SAMPLES, param};
 
+use crate::flm::chunk::{ChunkIter, ChunkWriter, ContentPath};
+use crate::metrics::FontSize;
 use crate::panels::build::*;
-use crate::ui::{UiCtx, widgets};
+use crate::panels::feed;
+use crate::ui::UiCtx;
 
-const LFO_1_SYNCED: Show = Show::Item(param::lfo_at(0usize) + param::LFO_MODE, 1);
-const LFO_2_SYNCED: Show = Show::Item(param::lfo_at(1usize) + param::LFO_MODE, 1);
-const LFO_3_SYNCED: Show = Show::Item(param::lfo_at(2usize) + param::LFO_MODE, 1);
-const LFO_4_SYNCED: Show = Show::Item(param::lfo_at(3usize) + param::LFO_MODE, 1);
+pub const TYPE_ID: u16 = 53;
 
-const LFO_SYNC_SHOWS: [Show; LFO_COUNT] = [LFO_1_SYNCED, LFO_2_SYNCED, LFO_3_SYNCED, LFO_4_SYNCED];
+const TABS: &str = "OSC A · OSC B · FILTER · ENV · LFO · MATRIX · MASTER";
+const ENV_TABS: &str = "ENV 1 · ENV 2 · ENV 3 · ENV 4";
+const LFO_TABS: &str = "LFO 1 · LFO 2 · LFO 3 · LFO 4";
+const MATRIX_TABS: &str = "Slots 1–4 · Slots 5–8";
+
+const ENV_TAB: &str = "ds_env_tab";
+const LFO_TAB: &str = "ds_lfo_tab";
+const MAT_TAB: &str = "ds_mat_tab";
+
+const WAVES_A: &str = "ds_wave_a_name";
+const WAVES_B: &str = "ds_wave_b_name";
+
+/// Telemetry indices inside the 144-float analysis buffer from `DewSerum::analysis()`.
+const T_CUTOFF: usize = 128;
+const T_RES: usize = 129;
+const T_WT_A: usize = 130;
+const T_WT_B: usize = 131;
+const T_PITCH_A: usize = 132;
+const T_PITCH_B: usize = 133;
+const T_SYNC_A: usize = 134;
+const T_SYNC_B: usize = 135;
+const T_FM: usize = 136;
+const T_DETUNE_A: usize = 137;
+const T_DETUNE_B: usize = 138;
+const T_LEVEL_A: usize = 139;
+const T_LEVEL_B: usize = 140;
+const T_ACTIVE: usize = 141;
+
+pub fn wire(module: &ModuleInstance, state: &mut PanelState) {
+    for (osc, key) in [(0usize, WAVES_A), (1usize, WAVES_B)] {
+        let name = crate::audio_engine::samples::dewserum_table_path(module, osc).and_then(|p| {
+            let (ContentPath::Shorthand { relative: text, .. } | ContentPath::Plain(text)) = p;
+            Some(Path::new(&text).file_stem()?.to_string_lossy().into_owned())
+        });
+        state.texts.insert(
+            if osc == 0 { 10051 } else { 20051 },
+            name.unwrap_or_default(),
+        );
+        let _ = key;
+    }
+}
+
+/// Checks if `Custom (My Wavetables)` was just picked on OSC A or OSC B, tags `WTOS` in `custom_data`,
+/// and returns true so the rack opens the sample picker.
+pub fn custom_picked(module: &mut ModuleInstance, changed: &[i32]) -> bool {
+    if module.type_id != TYPE_ID {
+        return false;
+    }
+    let osc = if changed.contains(&(param::OSC_A_TABLE as i32))
+        && choice(module.params[param::OSC_A_TABLE], TABLE_MENU_COUNT) == CUSTOM_MENU_INDEX
+    {
+        Some(0u8)
+    } else if changed.contains(&(param::OSC_B_TABLE as i32))
+        && choice(module.params[param::OSC_B_TABLE], TABLE_MENU_COUNT) == CUSTOM_MENU_INDEX
+    {
+        Some(1u8)
+    } else {
+        None
+    };
+    let Some(osc_idx) = osc else {
+        return false;
+    };
+    let previous = module.file.custom_data.as_deref().unwrap_or_default();
+    let kept: Vec<_> = ChunkIter::new(previous, "CSTM")
+        .map_while(Result::ok)
+        .filter(|c| c.id != *b"WTOS")
+        .collect();
+    let mut writer = ChunkWriter::default();
+    let _ = writer.chunk(*b"WTOS", |w| w.raw(&[osc_idx]));
+    for c in kept {
+        let _ = writer.chunk(c.id, |w| w.raw(c.payload));
+    }
+    module.file.custom_data = Some(writer.into_bytes());
+    true
+}
 
 pub fn panel() -> Option<Panel> {
     Some(Panel::new(vstack([
-        tabs(0, "OSC A · OSC B · FILTER · ENV · LFO · MATRIX · MASTER").h(Size::U(1.35)),
-    osc_page(10000, param::OSC_BASE[0usize], param::OSC_A_TABLE, param::OSC_A_SYNC, Some(param::OSC_A_FM), draw_wave_a).show(Show::Tab(0)),
-    osc_page(20000, param::OSC_BASE[1usize], param::OSC_B_TABLE, param::OSC_B_SYNC, None, draw_wave_b).show(Show::Tab(1)),
-      vstack([
-          list(31100, "LP 12 · LP 24 · HP 12 · HP 24 · BP 12 · Notch · Comb", Bar::Bottom)
-              .p(param::FILTER_TYPE)
-              .h(Size::U(1.35)),
-          display(31150)
-              .margins(0.2, 0.15, 0.2, 0.15)
-              .h(Size::U(4.6))
-              .draw(draw_filter_curve),
-          hstack([
-              knob(31200, "Cutoff").p(param::CUTOFF),
-              knob(31300, "Resonance").p(param::RESONANCE),
-              knob(31350, "Drive").p(param::FILTER_DRIVE),
-              knob(31400, "Key Track").p(param::KEY_TRACK),
-          ]),
-      ])
-      .show(Show::Tab(2)),
+        tabs(100, TABS).h(Size::U(1.25)),
+        hstack([
+            vstack([
+                spinner(10050, "OSC A Table")
+                    .p(param::OSC_A_TABLE)
+                    .items_per_column(5)
+                    .show(Show::Tab(0)),
+                spinner(20050, "OSC B Table")
+                    .p(param::OSC_B_TABLE)
+                    .items_per_column(5)
+                    .show(Show::Tab(1)),
+                text(10051, "")
+                    .font(FontSize::Pt10)
+                    .align(Align2::LEFT_CENTER)
+                    .ink(Ink::Channel)
+                    .show(Show::Tab(0)),
+                text(20051, "")
+                    .font(FontSize::Pt10)
+                    .align(Align2::LEFT_CENTER)
+                    .ink(Ink::Channel)
+                    .show(Show::Tab(1)),
+                text(30051, "Output Scope")
+                    .font(FontSize::Pt10)
+                    .align(Align2::LEFT_CENTER)
+                    .ink(Ink::Text)
+                    .show(Show::Not(&Show::Or(&[Show::Tab(0), Show::Tab(1)]))),
+            ])
+            .w(Size::Flex(1.25)),
+            display(900)
+                .margins(0.15, 0.15, 0.15, 0.15)
+                .w(Size::Flex(1.0))
+                .draw(draw_output_scope),
+        ])
+        .h(Size::U(1.95)),
+        osc_page(
+            10000,
+            param::OSC_BASE[0usize],
+            0usize,
+            param::OSC_A_SYNC,
+            Some(param::OSC_A_FM),
+            draw_wave_a,
+        )
+        .show(Show::Tab(0)),
+        osc_page(
+            20000,
+            param::OSC_BASE[1usize],
+            1usize,
+            param::OSC_B_SYNC,
+            None,
+            draw_wave_b,
+        )
+        .show(Show::Tab(1)),
+        filter_page().show(Show::Tab(2)),
         env_page().show(Show::Tab(3)),
         lfo_page().show(Show::Tab(4)),
         matrix_page().show(Show::Tab(5)),
-        hstack([
-            knob(61000, "Master").p(param::MASTER).w(Size::Flex(1.3)),
-            spinner(62000, "Voices").p(param::VOICES),
-            spacer(63000),
-        ])
-        .show(Show::Tab(6)),
+        master_page().show(Show::Tab(6)),
     ])))
 }
-
 fn osc_page(
     id_base: u32,
     base: usize,
-    table_param: usize,
+    osc_idx: usize,
     sync_param: usize,
     fm_param: Option<usize>,
     draw_fn: Draw,
@@ -71,11 +182,8 @@ fn osc_page(
         v_slider(id_base + 900, "Width").p(base + param::WIDTH),
     ]);
 
+    let _ = osc_idx;
     vstack([
-        spinner(id_base + 50, "Wavetable")
-            .p(table_param)
-            .items_per_column(5)
-            .h(Size::U(1.3)),
         hstack([
             display(id_base + 100)
                 .margins(0.2, 0.2, 0.2, 0.2)
@@ -84,97 +192,167 @@ fn osc_page(
             knob(id_base + 200, "WT Pos").p(base + param::WT_POS),
             knob(id_base + 300, "Level").p(base + param::LEVEL),
         ])
-        .h(Size::U(4.1)),
+        .h(Size::U(4.6)),
         hstack(bottom),
     ])
 }
 
-fn env_page() -> Part {
+fn filter_page() -> Part {
     vstack([
-        display(35000)
-            .margins(0.2, 0.2, 0.2, 0.1)
-            .h(Size::U(5.4))
-            .draw(draw_env_editor),
-        vstack(std::array::from_fn::<Part, ENV_COUNT, _>(|e| {
-            let at = param::env_at(e);
-            let id_b = 36000 + (e as u32) * 100;
-            hstack([
-                v_slider(id_b + 1, "Attack").p(at),
-                v_slider(id_b + 2, "Decay").p(at + 1),
-                v_slider(id_b + 3, "Sustain").p(at + 2),
-                v_slider(id_b + 4, "Release").p(at + 3),
-            ])
-            .show(Show::Flag("ds_env", e))
-        })),
+        selector(30100, FilterKind::NAMES.join(" · "))
+            .p(param::FILTER_TYPE)
+            .h(Size::U(1.15)),
+        display(30200)
+            .margins(0.2, 0.2, 0.2, 0.2)
+            .h(Size::U(4.5))
+            .draw(draw_filter_curve),
+        hstack([
+            knob(30300, "Cutoff").p(param::CUTOFF),
+            knob(30400, "Resonance").p(param::RESONANCE),
+            knob(30500, "Drive").p(param::FILTER_DRIVE),
+            knob(30600, "Key Track").p(param::KEY_TRACK),
+        ]),
     ])
+}
+
+fn env_page() -> Part {
+    let sub_pages: Vec<Part> = (0..ENV_COUNT)
+        .map(|e| {
+            let at = param::env_at(e);
+            let b = 41000 + (e as u32) * 100;
+            vstack([
+                display(b + 50)
+                    .margins(0.2, 0.2, 0.2, 0.2)
+                    .h(Size::U(4.5))
+                    .draw(match e {
+                        0 => draw_env_0,
+                        1 => draw_env_1,
+                        2 => draw_env_2,
+                        _ => draw_env_3,
+                    }),
+                hstack([
+                    knob(b + 1, "Attack").p(at),
+                    knob(b + 2, "Decay").p(at + 1),
+                    knob(b + 3, "Sustain").p(at + 2),
+                    knob(b + 4, "Release").p(at + 3),
+                ]),
+            ])
+            .show(Show::Setting(40100, e))
+        })
+        .collect();
+
+    let mut children = vec![selector(40100, ENV_TABS).s(ENV_TAB).h(Size::U(1.15))];
+    children.extend(sub_pages);
+    vstack(children)
 }
 
 fn lfo_page() -> Part {
-    hstack([
-        display(41000)
-            .margins(0.2, 0.2, 0.2, 0.2)
-            .w(Size::Flex(2.4))
-            .draw(draw_lfo_editor),
-        vstack(std::array::from_fn::<Part, LFO_COUNT, _>(|l| {
+    let sub_pages: Vec<Part> = (0..LFO_COUNT)
+        .map(|l| {
             let at = param::lfo_at(l);
-            let id_b = 42000 + (l as u32) * 100;
-            let sync_show = LFO_SYNC_SHOWS[l];
+            let b = 51000 + (l as u32) * 100;
+            let draw_fn = match l {
+                0 => draw_lfo_0,
+                1 => draw_lfo_1,
+                2 => draw_lfo_2,
+                _ => draw_lfo_3,
+            };
             vstack([
-                list(id_b + 10, "Hertz · Sync", Bar::Bottom)
-                    .p(at + param::LFO_MODE)
-                    .h(Size::U(1.3)),
-                list(id_b + 15, "Trig · Env · Free", Bar::Bottom)
-                    .p(at + param::LFO_TRIG)
-                    .h(Size::U(1.3)),
-                knob(id_b + 20, "Rate")
-                    .p(at + param::LFO_RATE)
-                    .show(Show::Not(match l {
-                        0 => &LFO_1_SYNCED,
-                        1 => &LFO_2_SYNCED,
-                        2 => &LFO_3_SYNCED,
-                        _ => &LFO_4_SYNCED,
-                    })),
-                spinner(id_b + 30, "Sync Beat")
-                    .p(at + param::LFO_BEAT)
-                    .items_per_column(5)
-                    .show(sync_show),
+                display(b + 50)
+                    .margins(0.2, 0.2, 0.2, 0.2)
+                    .h(Size::U(4.5))
+                    .draw(draw_fn),
+                hstack([
+                    knob(b + 1, "Rate").p(at + param::LFO_RATE),
+                    spinner(b + 2, "Mode").p(at + param::LFO_MODE),
+                    spinner(b + 3, "Beat").p(at + param::LFO_BEAT),
+                    spinner(b + 4, "Trig").p(at + param::LFO_TRIG),
+                ]),
             ])
-                    .show(Show::Flag("ds_lfo", l))
-        }))
-        .w(Size::Flex(1.0)),
-    ])
+            .show(Show::Setting(50100, l))
+        })
+        .collect();
+
+    let mut children = vec![selector(50100, LFO_TABS).s(LFO_TAB).h(Size::U(1.15))];
+    children.extend(sub_pages);
+    vstack(children)
 }
 
 fn matrix_page() -> Part {
+    let slot_row = |slot: usize| {
+        let at = param::MATRIX + slot * SLOT_PARAMS;
+        let b = 61000 + (slot as u32) * 10;
+        hstack([
+            spinner(b + 1, "Source").p(at),
+            spinner(b + 2, "Dest").p(at + 1).items_per_column(7),
+            h_slider(b + 3, "Depth").p(at + 2),
+        ])
+    };
+
     vstack([
-        display(50500)
-            .margins(0.2, 0.1, 0.2, 0.1)
-            .h(Size::U(1.1))
-            .draw(draw_matrix_pager),
-        vstack([
-            matrix_slot_row(51000, 0),
-            matrix_slot_row(52000, 1),
-            matrix_slot_row(53000, 2),
-            matrix_slot_row(54000, 3),
-        ])
-        .show(Show::Flag("ds_mat_page", 0)),
-        vstack([
-            matrix_slot_row(55000, 4),
-            matrix_slot_row(56000, 5),
-            matrix_slot_row(57000, 6),
-            matrix_slot_row(58000, 7),
-        ])
-        .show(Show::Flag("ds_mat_page", 1)),
+        selector(60100, MATRIX_TABS).s(MAT_TAB).h(Size::U(1.15)),
+        vstack([slot_row(0), slot_row(1), slot_row(2), slot_row(3)])
+            .show(Show::Setting(60100, 0)),
+        vstack([slot_row(4), slot_row(5), slot_row(6), slot_row(7)])
+            .show(Show::Setting(60100, 1)),
     ])
 }
 
-fn matrix_slot_row(id_base: u32, slot: usize) -> Part {
-    let at = param::MATRIX + slot * 3;
+fn master_page() -> Part {
     hstack([
-        spinner(id_base + 10, "").p(at).w(Size::Flex(1.0)),
-        spinner(id_base + 20, "").p(at + 1).w(Size::Flex(1.0)),
-        h_slider(id_base + 30, "Depth").p(at + 2).w(Size::Flex(1.3)),
+        spacer(70100),
+        spinner(70200, "Voices").p(param::VOICES),
+        knob(70300, "Master").p(param::MASTER),
+        spacer(70400),
     ])
+}
+
+fn draw_output_scope(
+    ui: &mut Ui,
+    cx: &UiCtx,
+    _id: Id,
+    r: Rect,
+    module: &mut ModuleInstance,
+    _state: &mut PanelState,
+    ink: Color32,
+) -> Vec<usize> {
+    let colors = &cx.theme.colors;
+    let px = 1.0 / cx.m.ppp();
+    let painter = ui.painter();
+    painter.rect_filled(r, 4.0 * px, colors.control_fill.to_color32());
+    painter.hline(r.x_range(), r.center().y, Stroke::new(px, colors.background.to_color32()));
+
+    let inner = r.shrink(3.0 * px);
+    if inner.width() <= 2.0 || inner.height() <= 2.0 {
+        return Vec::new();
+    }
+
+    let slab = feed(ui, module.instance_id).map(|(_, a)| a).unwrap_or(&[]);
+    if slab.len() >= SCOPE_SAMPLES {
+        let samples = &slab[0..SCOPE_SAMPLES];
+        let points: Vec<Pos2> = samples
+            .iter()
+            .enumerate()
+            .map(|(i, &s)| {
+                let t = i as f32 / (SCOPE_SAMPLES - 1) as f32;
+                let x = inner.left() + t * inner.width();
+                let y = inner.center().y - s.clamp(-1.0, 1.0) * (inner.height() * 0.45);
+                pos2(x, y)
+            })
+            .collect();
+        painter.add(Shape::line(points, Stroke::new(1.6 * px, ink)));
+        if slab.len() >= ANALYSIS_LEN && slab[T_ACTIVE] > 0.5 {
+            ui.ctx().request_repaint();
+        }
+    }
+    Vec::new()
+}
+fn format_hz(hz: f32) -> String {
+    if hz >= 1000.0 {
+        format!("{:.1} kHz", hz / 1000.0)
+    } else {
+        format!("{:.0} Hz", hz)
+    }
 }
 
 fn draw_wave_a(
@@ -191,8 +369,12 @@ fn draw_wave_a(
         cx,
         r,
         module,
+        0usize,
         param::OSC_A_TABLE,
         param::OSC_BASE[0usize] + param::WT_POS,
+        T_WT_A,
+        T_SYNC_A,
+        Some(T_FM),
         ink,
     );
     Vec::new()
@@ -212,20 +394,29 @@ fn draw_wave_b(
         cx,
         r,
         module,
+        1usize,
         param::OSC_B_TABLE,
         param::OSC_BASE[1usize] + param::WT_POS,
+        T_WT_B,
+        T_SYNC_B,
+        None,
         ink,
     );
     Vec::new()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_wave_for(
     ui: &mut Ui,
     cx: &UiCtx,
     r: Rect,
     module: &ModuleInstance,
+    osc: usize,
     table_param: usize,
     wt_param: usize,
+    t_wt: usize,
+    t_sync: usize,
+    t_fm: Option<usize>,
     ink: Color32,
 ) {
     let colors = &cx.theme.colors;
@@ -234,13 +425,18 @@ fn draw_wave_for(
     painter.rect_filled(r, 4.0 * px, colors.control_fill.to_color32());
     painter.hline(r.x_range(), r.center().y, Stroke::new(px, colors.background.to_color32()));
 
-    let table_idx = honeydew_audio::dewserum::modulation::choice(
+    let slab = feed(ui, module.instance_id).map(|(_, a)| a).unwrap_or(&[]);
+    let active = slab.len() >= ANALYSIS_LEN && slab[T_ACTIVE] > 0.5;
+
+    let table_idx = choice(
         module.params.get(table_param).copied().unwrap_or(0.0),
-        honeydew_audio::dewserum::wavetable::TABLE_COUNT,
+        TABLE_MENU_COUNT,
     );
-    let wt_pos = module.params.get(wt_param).copied().unwrap_or(0.0);
+    let base_wt = module.params.get(wt_param).copied().unwrap_or(0.0);
+    let wt_pos = if active { slab[t_wt] } else { base_wt };
+
     let mut samples = [0.0f32; 128];
-    wave_preview(table_idx, wt_pos, &mut samples);
+    wave_preview(osc, table_idx, wt_pos, &mut samples);
 
     let inner = r.shrink(6.0 * px);
     if inner.width() <= 2.0 || inner.height() <= 2.0 {
@@ -259,568 +455,381 @@ fn draw_wave_for(
         .collect();
 
     painter.add(Shape::line(points, Stroke::new(2.0 * px, ink)));
-}
 
-fn draw_matrix_pager(
-    ui: &mut Ui,
-    cx: &UiCtx,
-    id: Id,
-    r: Rect,
-    _module: &mut ModuleInstance,
-    state: &mut PanelState,
-    ink: Color32,
-) -> Vec<usize> {
-    let px = 1.0 / cx.m.ppp();
-    let colors = &cx.theme.colors;
-    let fill = colors.control_fill.to_color32();
-    let text_col = colors.text.to_color32();
-    let mut page = state.flags.get("ds_mat_page").copied().unwrap_or(0).min(1);
-
-    let labels = ["Slots 1–4", "Slots 5–8"];
-    let btn_w = r.width() / 2.0;
-    for (idx, label) in labels.iter().enumerate() {
-        let br = Rect::from_min_size(
-            pos2(r.left() + idx as f32 * btn_w, r.top()),
-            vec2(btn_w - 3.0 * px, r.height()),
-        );
-        let active = page == idx;
-        let b = widgets::Button {
-            fill_on: ink,
-            fill_off: fill,
-            text_on: text_col,
-            text_off: Some(text_col),
-            ..widgets::Button::new(id.with(("mat_pg", idx)), br, *label, active, colors)
-        };
-        if widgets::button(ui, cx, &b, active).clicked() {
-            page = idx;
-            state.flags.insert("ds_mat_page", page);
-        }
-    }
-    Vec::new()
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum EnvDrag {
-    Attack,
-    DecaySustain,
-    Release,
-}
-
-fn draw_env_editor(
-    ui: &mut Ui,
-    cx: &UiCtx,
-    id: Id,
-    r: Rect,
-    module: &mut ModuleInstance,
-    state: &mut PanelState,
-    ink: Color32,
-) -> Vec<usize> {
-    let (u, px) = (cx.m.u(1.0), 1.0 / cx.m.ppp());
-    let colors = &cx.theme.colors;
-    let fill = colors.control_fill.to_color32();
-    let bg = colors.background.to_color32();
-    let text_col = colors.text.to_color32();
-    let mut changed = Vec::new();
-
-    let mut cur_env = state.flags.get("ds_env").copied().unwrap_or(0).min(ENV_COUNT - 1);
-    let bar_h = 0.95 * u;
-    let bar_rect = Rect::from_min_size(r.min, vec2(r.width(), bar_h));
-    let plot_rect = Rect::from_min_max(pos2(r.left(), r.top() + bar_h + 4.0 * px), r.max);
-
-    let env_names = ["ENV 1 (Amp)", "ENV 2", "ENV 3", "ENV 4"];
-    let btn_w = bar_rect.width() / ENV_COUNT as f32;
-    for (idx, name) in env_names.iter().enumerate() {
-        let br = Rect::from_min_size(
-            pos2(bar_rect.left() + idx as f32 * btn_w, bar_rect.top()),
-            vec2(btn_w - 3.0 * px, bar_rect.height()),
-        );
-        let active = cur_env == idx;
-        let b = widgets::Button {
-            fill_on: ink,
-            fill_off: fill,
-            text_on: text_col,
-            text_off: Some(text_col),
-            ..widgets::Button::new(id.with(("env_sel", idx)), br, *name, active, colors)
-        };
-        if widgets::button(ui, cx, &b, active).clicked() {
-            cur_env = idx;
-            state.flags.insert("ds_env", cur_env);
-        }
-    }
-
-    let at = param::env_at(cur_env);
-    if module.params.len() < at + 4 {
-        return changed;
-    }
-
-    ui.painter().rect_filled(plot_rect, 4.0 * px, fill);
-    let inner = plot_rect.shrink(10.0 * px);
-    if inner.width() <= 6.0 || inner.height() <= 6.0 {
-        return changed;
-    }
-
-    let mut atk = module.params[at];
-    let mut dec = module.params[at + 1];
-    let mut sus = module.params[at + 2];
-    let mut rel = module.params[at + 3];
-
-    let seg_w = inner.width() / 3.2;
-    let p0 = pos2(inner.left(), inner.bottom());
-    let p1 = pos2(inner.left() + atk * seg_w, inner.top());
-    let p2 = pos2(p1.x + dec * seg_w, inner.bottom() - sus * inner.height());
-    let p3 = pos2(p2.x + 0.2 * seg_w, p2.y);
-    let p4 = pos2(p3.x + rel * seg_w, inner.bottom());
-
-    let resp = ui.interact(plot_rect, id.with("env_canvas"), Sense::drag());
-    let drag_id = id.with(("env_drag", module.instance_id));
-    let mut drag: Option<EnvDrag> = ui.data(|d| d.get_temp(drag_id));
-    let pointer_down = ui.input(|i| i.pointer.primary_down());
-    let pointer_pos = ui.input(|i| i.pointer.latest_pos());
-
-    if pointer_down {
-        if let Some(pos) = pointer_pos {
-            if drag.is_none() && resp.hovered() {
-                let origin = ui.input(|i| i.pointer.press_origin()).unwrap_or(pos);
-                let hit = 1.15 * u;
-                let pts = [
-                    (EnvDrag::Attack, p1.distance(origin)),
-                    (EnvDrag::DecaySustain, p2.distance(origin)),
-                    (EnvDrag::Release, p4.distance(origin)),
-                ];
-                if let Some((best, d)) = pts.into_iter().min_by(|a, b| a.1.total_cmp(&b.1)) {
-                    if d <= hit {
-                        drag = Some(best);
-                    }
-                }
-            }
-            match drag {
-                Some(EnvDrag::Attack) => {
-                    atk = ((pos.x - inner.left()) / seg_w).clamp(0.0, 1.0);
-                }
-                Some(EnvDrag::DecaySustain) => {
-                    dec = ((pos.x - p1.x) / seg_w).clamp(0.0, 1.0);
-                    sus = ((inner.bottom() - pos.y) / inner.height()).clamp(0.0, 1.0);
-                }
-                Some(EnvDrag::Release) => {
-                    rel = ((pos.x - p3.x) / seg_w).clamp(0.0, 1.0);
-                }
-                None => {}
-            }
-        }
+    let sync_val = if active {
+        slab[t_sync]
     } else {
-        drag = None;
+        let p = if osc == 0 {
+            param::OSC_A_SYNC
+        } else {
+            param::OSC_B_SYNC
+        };
+        module.params.get(p).copied().unwrap_or(0.0)
+    };
+    let ratio = 1.0 + 15.0 * sync_val * sync_val;
+    let mut hud = format!("WT {:.0}%  Sync {:.2}x", wt_pos * 100.0, ratio);
+    if let Some(fm_idx) = t_fm {
+        let fm_val = if active {
+            slab[fm_idx]
+        } else {
+            module.params.get(param::OSC_A_FM).copied().unwrap_or(0.0)
+        };
+        hud.push_str(&format!("  FM {:.0}%", fm_val * 100.0));
     }
-    ui.data_mut(|d| d.insert_temp(drag_id, drag));
-
-    let next = [atk, dec, sus, rel];
-    for (k, &val) in next.iter().enumerate() {
-        let idx = at + k;
-        if (module.params[idx] - val).abs() > 1e-5 {
-            module.params[idx] = val;
-            changed.push(idx);
-        }
-    }
-
-    let p1 = pos2(inner.left() + atk * seg_w, inner.top());
-    let p2 = pos2(p1.x + dec * seg_w, inner.bottom() - sus * inner.height());
-    let p3 = pos2(p2.x + 0.2 * seg_w, p2.y);
-    let p4 = pos2(p3.x + rel * seg_w, inner.bottom());
-
-    ui.painter()
-        .add(Shape::line(vec![p0, p1, p2, p3, p4], Stroke::new(2.2 * px, ink)));
-    for pt in [p1, p2, p4] {
-        ui.painter().circle_filled(pt, 6.0 * px, ink);
-        ui.painter().circle_stroke(pt, 6.0 * px, Stroke::new(1.5 * px, bg));
-    }
-
-    changed
-    }
-#[derive(Clone, Copy, Debug)]
-enum LfoDrag {
-    Point(usize),
-    Bend(usize, f32, Pos2),
-}
-
-fn draw_lfo_editor(
-    ui: &mut Ui,
-    cx: &UiCtx,
-    id: Id,
-    r: Rect,
-    module: &mut ModuleInstance,
-    state: &mut PanelState,
-    ink: Color32,
-) -> Vec<usize> {
-    let (u, px) = (cx.m.u(1.0), 1.0 / cx.m.ppp());
-    let colors = &cx.theme.colors;
-    let fill = colors.control_fill.to_color32();
-    let bg = colors.background.to_color32();
-    let text_col = colors.text.to_color32();
-
-    let mut changed = Vec::new();
-    let mut cur_lfo = state.flags.get("ds_lfo").copied().unwrap_or(0).min(LFO_COUNT - 1);
-
-    let sel_h = 0.85 * u;
-    let sel_rect = Rect::from_min_size(r.min, vec2(r.width(), sel_h));
-    let bar_h = 0.85 * u;
-    let bar_rect = Rect::from_min_size(
-        pos2(r.left(), sel_rect.bottom() + 3.0 * px),
-        vec2(r.width(), bar_h),
+    let font = cx.m.font_id(FontSize::Pt8);
+    painter.text(
+        pos2(inner.left() + 2.0 * px, inner.top()),
+        Align2::LEFT_TOP,
+        hud,
+        font,
+        colors.text.to_color32().gamma_multiply(0.85),
     );
-    let plot_rect = Rect::from_min_max(pos2(r.left(), bar_rect.bottom() + 4.0 * px), r.max);
-
-    let lfo_names = ["LFO 1", "LFO 2", "LFO 3", "LFO 4"];
-    let lfo_btn_w = sel_rect.width() / LFO_COUNT as f32;
-    for (idx, name) in lfo_names.iter().enumerate() {
-        let br = Rect::from_min_size(
-            pos2(sel_rect.left() + idx as f32 * lfo_btn_w, sel_rect.top()),
-            vec2(lfo_btn_w - 2.0 * px, sel_rect.height()),
-        );
-        let active = cur_lfo == idx;
-        let b = widgets::Button {
-            fill_on: ink,
-            fill_off: fill,
-            text_on: text_col,
-            text_off: Some(text_col),
-            ..widgets::Button::new(id.with(("lfo_sel", idx)), br, *name, active, colors)
-        };
-        if widgets::button(ui, cx, &b, active).clicked() {
-            cur_lfo = idx;
-            state.flags.insert("ds_lfo", cur_lfo);
-        }
-    }
-
-    let curve_start = param::curve_at(cur_lfo);
-    let curve_end = curve_start + CURVE_PARAMS;
-    if module.params.len() < curve_end {
-        return changed;
-    }
-
-    let mut curve = LfoCurve::from_params(&module.params[curve_start..curve_end]);
-    let mut dirty = false;
-
-    let btn_w = bar_rect.width() / CurvePreset::ALL.len() as f32;
-    for (idx, &preset) in CurvePreset::ALL.iter().enumerate() {
-        let br = Rect::from_min_size(
-            pos2(bar_rect.left() + idx as f32 * btn_w, bar_rect.top()),
-            vec2(btn_w - 2.0 * px, bar_rect.height()),
-        );
-        let b = widgets::Button {
-            fill_on: ink,
-            fill_off: fill,
-            text_on: fill,
-            text_off: Some(text_col),
-            ..widgets::Button::new(
-                id.with(("lfo_preset", cur_lfo, idx)),
-                br,
-                CurvePreset::NAMES[idx],
-                false,
-                colors,
-            )
-        };
-        if widgets::button(ui, cx, &b, false).clicked() {
-            curve = preset.curve();
-            dirty = true;
-        }
-    }
-
-    ui.painter().rect_filled(plot_rect, 4.0 * px, fill);
-    let inner = plot_rect.shrink(8.0 * px);
-    if inner.width() <= 4.0 || inner.height() <= 4.0 {
-        return changed;
-    }
-
-    for k in 1..4 {
-        let gx = inner.left() + inner.width() * (k as f32 / 4.0);
-        ui.painter().vline(gx, inner.y_range(), Stroke::new(px, bg));
-    }
-    ui.painter()
-        .hline(inner.x_range(), inner.center().y, Stroke::new(px, bg));
-
-    let to_screen = |nx: f32, ny: f32| -> Pos2 {
-        pos2(
-            inner.left() + nx.clamp(0.0, 1.0) * inner.width(),
-            inner.bottom() - ny.clamp(0.0, 1.0) * inner.height(),
-        )
-    };
-    let from_screen = |p: Pos2| -> (f32, f32) {
-        (
-            ((p.x - inner.left()) / inner.width()).clamp(0.0, 1.0),
-            ((inner.bottom() - p.y) / inner.height()).clamp(0.0, 1.0),
-        )
-    };
-
-    let resp = ui.interact(plot_rect, id.with(("lfo_canvas", cur_lfo)), Sense::click_and_drag());
-    let drag_id = id.with(("lfo_drag", module.instance_id, cur_lfo));
-    let mut active_drag: Option<LfoDrag> = ui.data(|d| d.get_temp(drag_id));
-
-    let hit_radius = 1.15 * u;
-    let pointer_down = ui.input(|i| i.pointer.primary_down());
-    let pointer_pos = ui.input(|i| i.pointer.latest_pos());
-
-    if resp.double_clicked() {
-        if let Some(pos) = resp.interact_pointer_pos() {
-            let mut removed = false;
-            for i in 1..curve.len().saturating_sub(1) {
-                let (px_n, py_n) = curve.point(i);
-                if to_screen(px_n, py_n).distance(pos) <= hit_radius {
-                    if curve.remove(i) {
-                        dirty = true;
-                        removed = true;
-                    }
-                    break;
-                }
-            }
-            if !removed && curve.len() < MAX_POINTS {
-                let (nx, ny) = from_screen(pos);
-                if curve.insert(nx, ny).is_some() {
-                    dirty = true;
-                }
-            }
-        }
-        active_drag = None;
-    } else if pointer_down {
-        if let Some(pos) = pointer_pos {
-            if active_drag.is_none() && (resp.hovered() || resp.is_pointer_button_down_on()) {
-                let origin = ui.input(|i| i.pointer.press_origin()).unwrap_or(pos);
-                let mut best_pt: Option<(usize, f32)> = None;
-                for i in 0..curve.len() {
-                    let (px_n, py_n) = curve.point(i);
-                    let d = to_screen(px_n, py_n).distance(origin);
-                    if d <= hit_radius && best_pt.is_none_or(|(_, bd)| d < bd) {
-                        best_pt = Some((i, d));
-                    }
-                }
-                if let Some((i, _)) = best_pt {
-                    active_drag = Some(LfoDrag::Point(i));
-                } else {
-                    let mut best_seg: Option<(usize, f32)> = None;
-                    for i in 0..curve.len().saturating_sub(1) {
-                        let (x0, _) = curve.point(i);
-                        let (x1, _) = curve.point(i + 1);
-                        let xm = 0.5 * (x0 + x1);
-                        let ym = curve.value(xm);
-                        let d = to_screen(xm, ym).distance(origin);
-                        if d <= hit_radius && best_seg.is_none_or(|(_, bd)| d < bd) {
-                            best_seg = Some((i, d));
-                        }
-                    }
-                    if let Some((seg, _)) = best_seg {
-                        active_drag = Some(LfoDrag::Bend(seg, curve.bend(seg), origin));
-                    }
-                }
-            }
-
-            match active_drag {
-                Some(LfoDrag::Point(i)) => {
-                    let (nx, ny) = from_screen(pos);
-                    curve.move_point(i, nx, ny);
-                    dirty = true;
-                }
-                Some(LfoDrag::Bend(seg, start_bend, origin)) => {
-                    let dy = (origin.y - pos.y) / (inner.height() * 0.45);
-                    curve.set_bend(seg, start_bend + dy);
-                    dirty = true;
-                }
-                None => {}
-            }
-        }
-    } else {
-        active_drag = None;
-    }
-
-    ui.data_mut(|d| d.insert_temp(drag_id, active_drag));
-
-    if dirty {
-        let encoded = curve.to_params();
-        for (i, &val) in encoded.iter().enumerate() {
-            let idx = curve_start + i;
-            if (module.params[idx] - val).abs() > 1e-6 {
-                module.params[idx] = val;
-                changed.push(idx);
-            }
-        }
+    if active {
         ui.ctx().request_repaint();
     }
-
-    let mut preview = [0.0f32; 128];
-    lfo_preview(&module.params[curve_start..curve_end], &mut preview);
-    let line_pts: Vec<Pos2> = preview
-        .iter()
-        .enumerate()
-        .map(|(k, &v)| {
-            let nx = k as f32 / (preview.len() - 1) as f32;
-            let ny = 0.5 * (v + 1.0);
-            to_screen(nx, ny)
-        })
-        .collect();
-    ui.painter()
-        .add(Shape::line(line_pts, Stroke::new(2.0 * px, ink)));
-
-    for i in 0..curve.len().saturating_sub(1) {
-        let (x0, _) = curve.point(i);
-        let (x1, _) = curve.point(i + 1);
-        if (x1 - x0).abs() > 0.03 {
-            let xm = 0.5 * (x0 + x1);
-            let ym = curve.value(xm);
-            ui.painter()
-                .circle_stroke(to_screen(xm, ym), 4.5 * px, Stroke::new(1.5 * px, text_col));
-        }
-    }
-
-    for i in 0..curve.len() {
-        let (px_n, py_n) = curve.point(i);
-        let center = to_screen(px_n, py_n);
-        ui.painter().circle_filled(center, 6.5 * px, ink);
-        ui.painter()
-            .circle_stroke(center, 6.5 * px, Stroke::new(1.5 * px, bg));
-    }
-
-    changed
 }
-
 fn draw_filter_curve(
     ui: &mut Ui,
     cx: &UiCtx,
-    id: Id,
+    _id: Id,
     r: Rect,
     module: &mut ModuleInstance,
     _state: &mut PanelState,
     ink: Color32,
 ) -> Vec<usize> {
-    let (u, px) = (cx.m.u(1.0), 1.0 / cx.m.ppp());
     let colors = &cx.theme.colors;
-    let fill = colors.control_fill.to_color32();
-    let bg = colors.background.to_color32();
-    let mut changed = Vec::new();
+    let px = 1.0 / cx.m.ppp();
+    let painter = ui.painter();
+    painter.rect_filled(r, 4.0 * px, colors.control_fill.to_color32());
 
-    ui.painter().rect_filled(r, 4.0 * px, fill);
-    let inner = r.shrink(10.0 * px);
-    if inner.width() <= 6.0 || inner.height() <= 6.0 {
-        return changed;
+    let inner = r.shrink(6.0 * px);
+    if inner.width() <= 4.0 || inner.height() <= 4.0 {
+        return Vec::new();
     }
 
-    // Frequency & dB grid
-    for k in 1..4 {
-        let gx = inner.left() + inner.width() * (k as f32 / 4.0);
-        ui.painter().vline(gx, inner.y_range(), Stroke::new(px, bg));
+    let grid = Stroke::new(px, colors.background.to_color32());
+    for g in [0.25, 0.5, 0.75] {
+        painter.hline(inner.x_range(), inner.top() + g * inner.height(), grid);
+        painter.vline(inner.left() + g * inner.width(), inner.y_range(), grid);
     }
-    let zero_y = inner.top() + inner.height() * 0.36;
-    ui.painter().hline(inner.x_range(), zero_y, Stroke::new(px, bg));
+
+    let slab = feed(ui, module.instance_id).map(|(_, a)| a).unwrap_or(&[]);
+    let active = slab.len() >= ANALYSIS_LEN && slab[T_ACTIVE] > 0.5;
 
     let kind = FilterKind::from_param(module.params.get(param::FILTER_TYPE).copied().unwrap_or(0.0));
-    let mut cutoff = module.params.get(param::CUTOFF).copied().unwrap_or(0.85).clamp(0.0, 1.0);
-    let mut res = module.params.get(param::RESONANCE).copied().unwrap_or(0.15).clamp(0.0, 1.0);
+    let base_cut = module.params.get(param::CUTOFF).copied().unwrap_or(0.85);
+    let base_res = module.params.get(param::RESONANCE).copied().unwrap_or(0.15);
 
-    // Interactive touch drag on filter response point (Cutoff = X, Resonance = Y)
-    let resp = ui.interact(r, id.with("flt_canvas"), Sense::drag());
-    let drag_id = id.with(("flt_drag", module.instance_id));
-    let mut dragging: bool = ui.data(|d| d.get_temp(drag_id)).unwrap_or(false);
-    let pointer_down = ui.input(|i| i.pointer.primary_down());
-    let pointer_pos = ui.input(|i| i.pointer.latest_pos());
+    let cut = if active { slab[T_CUTOFF] } else { base_cut };
+    let res = if active { slab[T_RES] } else { base_res };
+    let drive = module.params.get(param::FILTER_DRIVE).copied().unwrap_or(0.0);
 
-    let handle_now = pos2(
-        inner.left() + cutoff * inner.width(),
-        (zero_y - res * inner.height() * 0.30).clamp(inner.top() + 4.0 * px, inner.bottom() - 4.0 * px),
-    );
+    let fc = 20.0 * 2.0f32.powf(10.0 * cut);
+    let q = 0.5 * 20.0f32.powf(res);
 
-    if pointer_down {
-        if let Some(pos) = pointer_pos {
-            if !dragging && resp.hovered() {
-                let origin = ui.input(|i| i.pointer.press_origin()).unwrap_or(pos);
-                if handle_now.distance(origin) <= 1.3 * u || r.contains(origin) {
-                    dragging = true;
-                }
-            }
-            if dragging {
-                cutoff = ((pos.x - inner.left()) / inner.width()).clamp(0.0, 1.0);
-                res = ((zero_y - pos.y) / (inner.height() * 0.30)).clamp(0.0, 1.0);
-            }
-        }
-    } else {
-        dragging = false;
-    }
-    ui.data_mut(|d| d.insert_temp(drag_id, dragging));
-
-    if (module.params[param::CUTOFF] - cutoff).abs() > 1e-5 {
-        module.params[param::CUTOFF] = cutoff;
-        changed.push(param::CUTOFF);
-    }
-    if (module.params[param::RESONANCE] - res).abs() > 1e-5 {
-        module.params[param::RESONANCE] = res;
-        changed.push(param::RESONANCE);
-    }
-
-    // Compute Serum-style frequency response curve across 128 log-frequency points
-    let fc_hz = 20.0 * 2f32.powf(10.0 * cutoff);
-    let q = 0.5 * 14f32.powf(res);
-    let mut pts = Vec::with_capacity(128);
-
-    for i in 0..128 {
-        let nx = i as f32 / 127.0;
-        let f_hz = 20.0 * 2f32.powf(10.0 * nx);
-        let ratio = f_hz / fc_hz.max(1.0);
-        let r2 = ratio * ratio;
+    let steps = 96usize;
+    let mut points = Vec::with_capacity(steps);
+    for i in 0..steps {
+        let t = i as f32 / (steps - 1) as f32;
+        let f = 20.0 * 2.0f32.powf(10.0 * t);
+        let w = (f / fc).max(1e-4);
+        let w2 = w * w;
+        let denom = ((1.0 - w2).powi(2) + (w / q).powi(2)).sqrt().max(1e-4);
 
         let mag = match kind {
-            FilterKind::Lp12 => {
-                let denom = ((1.0 - r2).powi(2) + (ratio / q).powi(2)).sqrt();
-                1.0 / denom.max(1e-4)
-            }
-            FilterKind::Lp24 => {
-                let q2 = (0.5 * 6f32.powf(res)).max(0.5);
-                let single = ((1.0 - r2).powi(2) + (ratio / q2).powi(2)).sqrt();
-                1.0 / (single * single).max(1e-4)
-            }
-            FilterKind::Hp12 => {
-                let denom = ((1.0 - r2).powi(2) + (ratio / q).powi(2)).sqrt();
-                r2 / denom.max(1e-4)
-            }
-            FilterKind::Hp24 => {
-                let q2 = (0.5 * 6f32.powf(res)).max(0.5);
-                let single = ((1.0 - r2).powi(2) + (ratio / q2).powi(2)).sqrt();
-                (r2 * r2) / (single * single).max(1e-4)
-            }
-            FilterKind::Bp12 => {
-                let denom = ((1.0 - r2).powi(2) + (ratio / q).powi(2)).sqrt();
-                (ratio / q) / denom.max(1e-4)
-            }
-            FilterKind::Notch => {
-                let bw = (0.9 - 0.7 * res).max(0.12);
-                let num = (1.0 - r2).abs();
-                let den = ((1.0 - r2).powi(2) + (ratio * bw).powi(2)).sqrt();
-                (num / den.max(1e-4)).max(0.02)
-            }
+            FilterKind::Lp12 => 1.0 / denom,
+            FilterKind::Lp24 => (1.0 / denom).powi(2),
+            FilterKind::Hp12 => w2 / denom,
+            FilterKind::Hp24 => (w2 / denom).powi(2),
+            FilterKind::Bp12 => (w / q) / denom,
+            FilterKind::Notch => ((1.0 - w2).abs() / denom).max(0.05),
             FilterKind::Comb => {
-                let fb = 0.25 + 0.68 * res;
-                let phase = std::f32::consts::TAU * ratio;
-                let denom = (1.0 + fb * fb - 2.0 * fb * phase.cos()).sqrt();
-                (1.0 - fb) / denom.max(0.12)
+                let ripples = (PI * f / fc).cos().abs();
+                0.35 + (0.25 + 0.72 * res) * ripples
             }
         };
 
-        let db = 20.0 * mag.max(1e-3).log10();
-        let y = (zero_y - (db / 24.0) * (inner.height() * 0.34))
-            .clamp(inner.top() + 2.0 * px, inner.bottom() - 2.0 * px);
-        pts.push(pos2(inner.left() + nx * inner.width(), y));
+        let db = (20.0 * mag.max(1e-3).log10() + drive * 6.0).clamp(-36.0, 24.0);
+        let norm_y = ((db + 36.0) / 60.0).clamp(0.0, 1.0);
+        let x = inner.left() + t * inner.width();
+        let y = inner.bottom() - norm_y * inner.height();
+        points.push(pos2(x, y));
     }
 
-    ui.painter().add(Shape::line(pts, Stroke::new(2.2 * px, ink)));
+    if active && (cut - base_cut).abs() > 0.005 {
+        let base_x = inner.left() + base_cut.clamp(0.0, 1.0) * inner.width();
+        painter.vline(
+            base_x,
+            inner.y_range(),
+            Stroke::new(px, colors.text.to_color32().gamma_multiply(0.35)),
+        );
+    }
 
-    let handle = pos2(
-        inner.left() + cutoff * inner.width(),
-        (zero_y - res * inner.height() * 0.30).clamp(inner.top() + 4.0 * px, inner.bottom() - 4.0 * px),
+    painter.add(Shape::line(points, Stroke::new(2.0 * px, ink)));
+
+    let dot_x = inner.left() + cut.clamp(0.0, 1.0) * inner.width();
+    let dot_y = inner.center().y - res * inner.height() * 0.35;
+    let dot_pos = pos2(dot_x, dot_y);
+    painter.circle_filled(dot_pos, 4.5 * px, ink);
+
+    let label = format!("{}  Res {:.0}%", format_hz(fc), res * 100.0);
+    let font = cx.m.font_id(FontSize::Pt8);
+    let (align, text_pos) = if cut > 0.68 {
+        (Align2::RIGHT_CENTER, pos2(dot_x - 8.0 * px, dot_y))
+    } else {
+        (Align2::LEFT_CENTER, pos2(dot_x + 8.0 * px, dot_y))
+    };
+    painter.text(text_pos, align, label, font, colors.text.to_color32());
+
+    if active {
+        ui.ctx().request_repaint();
+    }
+    Vec::new()
+}
+
+fn draw_env_0(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> {
+    draw_env_idx(ui, cx, r, m, 0, ink)
+}
+fn draw_env_1(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> {
+    draw_env_idx(ui, cx, r, m, 1, ink)
+}
+fn draw_env_2(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> {
+    draw_env_idx(ui, cx, r, m, 2, ink)
+}
+fn draw_env_3(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> {
+    draw_env_idx(ui, cx, r, m, 3, ink)
+}
+
+fn draw_env_idx(
+    ui: &mut Ui,
+    cx: &UiCtx,
+    r: Rect,
+    module: &mut ModuleInstance,
+    env_idx: usize,
+    ink: Color32,
+) -> Vec<usize> {
+    let colors = &cx.theme.colors;
+    let px = 1.0 / cx.m.ppp();
+    let painter = ui.painter();
+    painter.rect_filled(r, 4.0 * px, colors.control_fill.to_color32());
+
+    let inner = r.shrink(8.0 * px);
+    if inner.width() <= 6.0 || inner.height() <= 6.0 {
+        return Vec::new();
+    }
+
+    let at = param::env_at(env_idx);
+    let mut a = module.params.get(at).copied().unwrap_or(0.2);
+    let mut d = module.params.get(at + 1).copied().unwrap_or(0.5);
+    let mut s = module.params.get(at + 2).copied().unwrap_or(0.8);
+    let mut rel = module.params.get(at + 3).copied().unwrap_or(0.4);
+
+    let seg = inner.width() * 0.28;
+    let p0 = pos2(inner.left(), inner.bottom());
+    let mut p1 = pos2(p0.x + a * seg, inner.top());
+    let mut p2 = pos2(p1.x + d * seg, inner.bottom() - s * inner.height());
+    let hold_w = inner.width() * 0.16;
+    let p3 = pos2(p2.x + hold_w, p2.y);
+    let mut p4 = pos2(p3.x + rel * seg, inner.bottom());
+
+    let mut changed = Vec::new();
+    let handle_r = 12.0 * px;
+
+    let r1 = ui.interact(
+        Rect::from_center_size(p1, vec2(handle_r * 2.0, handle_r * 2.0)),
+        ui.id().with(("ds_env_a", env_idx)),
+        Sense::drag(),
     );
-    ui.painter().circle_filled(handle, 6.5 * px, ink);
-    ui.painter()
-        .circle_stroke(handle, 6.5 * px, Stroke::new(1.5 * px, bg));
+    if r1.dragged() {
+        a = ((r1.interact_pointer_pos().unwrap_or(p1).x - p0.x) / seg).clamp(0.0, 1.0);
+        module.params[at] = a;
+        changed.push(at);
+        p1.x = p0.x + a * seg;
+    }
+
+    let r2 = ui.interact(
+        Rect::from_center_size(p2, vec2(handle_r * 2.0, handle_r * 2.0)),
+        ui.id().with(("ds_env_ds", env_idx)),
+        Sense::drag(),
+    );
+    if r2.dragged() {
+        let pos = r2.interact_pointer_pos().unwrap_or(p2);
+        d = ((pos.x - p1.x) / seg).clamp(0.0, 1.0);
+        s = ((inner.bottom() - pos.y) / inner.height()).clamp(0.0, 1.0);
+        module.params[at + 1] = d;
+        module.params[at + 2] = s;
+        changed.push(at + 1);
+        changed.push(at + 2);
+        p2 = pos2(p1.x + d * seg, inner.bottom() - s * inner.height());
+    }
+
+    let p3_new = pos2(p2.x + hold_w, p2.y);
+    let r4 = ui.interact(
+        Rect::from_center_size(p4, vec2(handle_r * 2.0, handle_r * 2.0)),
+        ui.id().with(("ds_env_r", env_idx)),
+        Sense::drag(),
+    );
+    if r4.dragged() {
+        rel = ((r4.interact_pointer_pos().unwrap_or(p4).x - p3_new.x) / seg).clamp(0.0, 1.0);
+        module.params[at + 3] = rel;
+        changed.push(at + 3);
+        p4.x = p3_new.x + rel * seg;
+    }
+
+    painter.add(Shape::line(
+        vec![p0, p1, p2, p3_new, p4],
+        Stroke::new(2.0 * px, ink),
+    ));
+    for pt in [p1, p2, p4] {
+        painter.circle_filled(pt, 5.0 * px, ink);
+        painter.circle_stroke(pt, 5.0 * px, Stroke::new(1.5 * px, colors.text.to_color32()));
+    }
+    changed
+}
+fn draw_lfo_0(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> {
+    draw_lfo_idx(ui, cx, r, m, 0, ink)
+}
+fn draw_lfo_1(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> {
+    draw_lfo_idx(ui, cx, r, m, 1, ink)
+}
+fn draw_lfo_2(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> {
+    draw_lfo_idx(ui, cx, r, m, 2, ink)
+}
+fn draw_lfo_3(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> {
+    draw_lfo_idx(ui, cx, r, m, 3, ink)
+}
+
+fn draw_lfo_idx(
+    ui: &mut Ui,
+    cx: &UiCtx,
+    r: Rect,
+    module: &mut ModuleInstance,
+    lfo_idx: usize,
+    ink: Color32,
+) -> Vec<usize> {
+    let colors = &cx.theme.colors;
+    let px = 1.0 / cx.m.ppp();
+    let painter = ui.painter();
+    painter.rect_filled(r, 4.0 * px, colors.control_fill.to_color32());
+
+    let inner = r.shrink(8.0 * px);
+    if inner.width() <= 6.0 || inner.height() <= 6.0 {
+        return Vec::new();
+    }
+
+    let grid = Stroke::new(px, colors.background.to_color32());
+    for i in 1..4 {
+        let f = i as f32 / 4.0;
+        painter.vline(inner.left() + f * inner.width(), inner.y_range(), grid);
+        painter.hline(inner.x_range(), inner.top() + f * inner.height(), grid);
+    }
+
+    let base = param::curve_at(lfo_idx);
+    let end = (base + CURVE_PARAMS).min(module.params.len());
+    let mut curve = if end > base {
+        LfoCurve::from_params(&module.params[base..end])
+    } else {
+        CurvePreset::Triangle.curve()
+    };
+
+    let mut changed = Vec::new();
+    let handle_r = 11.0 * px;
+    let mut dragged_any = false;
+
+    for i in 0..curve.count {
+        let pt_pos = pos2(
+            inner.left() + curve.points[i].x * inner.width(),
+            inner.bottom() - curve.points[i].y * inner.height(),
+        );
+        let resp = ui.interact(
+            Rect::from_center_size(pt_pos, vec2(handle_r * 2.0, handle_r * 2.0)),
+            ui.id().with(("ds_lfo_pt", lfo_idx, i)),
+            Sense::click_and_drag(),
+        );
+        if resp.double_clicked() && curve.count > 2 && i > 0 && i + 1 < curve.count {
+            for k in i..curve.count - 1 {
+                curve.points[k] = curve.points[k + 1];
+            }
+            curve.count -= 1;
+            dragged_any = true;
+            break;
+        }
+        if resp.dragged() {
+            let pos = resp.interact_pointer_pos().unwrap_or(pt_pos);
+            let nx = if i == 0 {
+                0.0
+            } else if i + 1 == curve.count {
+                1.0
+            } else {
+                let min_x = curve.points[i - 1].x + 0.01;
+                let max_x = curve.points[i + 1].x - 0.01;
+                ((pos.x - inner.left()) / inner.width()).clamp(min_x, max_x)
+            };
+            let ny = ((inner.bottom() - pos.y) / inner.height()).clamp(0.0, 1.0);
+            curve.points[i].x = nx;
+            curve.points[i].y = ny;
+            dragged_any = true;
+        }
+    }
+
+    let bg_resp = ui.interact(inner, ui.id().with(("ds_lfo_bg", lfo_idx)), Sense::click());
+    if bg_resp.double_clicked()
+        && curve.count < MAX_POINTS
+        && let Some(pos) = bg_resp.interact_pointer_pos()
+    {
+        let nx = ((pos.x - inner.left()) / inner.width()).clamp(0.02, 0.98);
+        let ny = ((inner.bottom() - pos.y) / inner.height()).clamp(0.0, 1.0);
+        let insert_at = (0..curve.count)
+            .find(|&k| curve.points[k].x > nx)
+            .unwrap_or(curve.count);
+        for k in (insert_at..curve.count).rev() {
+            curve.points[k + 1] = curve.points[k];
+        }
+        curve.points[insert_at] = honeydew_audio::dewserum::modulation::LfoPoint {
+            x: nx,
+            y: ny,
+            curve: 0.0,
+        };
+        curve.count += 1;
+        dragged_any = true;
+    }
+
+    if dragged_any {
+        let encoded = curve.to_params();
+        for (offset, &val) in encoded.iter().enumerate() {
+            let idx = base + offset;
+            if idx < module.params.len() {
+                module.params[idx] = val;
+                changed.push(idx);
+            }
+        }
+    }
+
+    let steps = 80usize;
+    let pts: Vec<Pos2> = (0..steps)
+        .map(|s| {
+            let t = s as f32 / (steps - 1) as f32;
+            let y = curve.sample(t);
+            pos2(inner.left() + t * inner.width(), inner.bottom() - y * inner.height())
+        })
+        .collect();
+    painter.add(Shape::line(pts, Stroke::new(2.0 * px, ink)));
+
+    for i in 0..curve.count {
+        let pt = pos2(
+            inner.left() + curve.points[i].x * inner.width(),
+            inner.bottom() - curve.points[i].y * inner.height(),
+        );
+        painter.circle_filled(pt, 4.5 * px, ink);
+        painter.circle_stroke(pt, 4.5 * px, Stroke::new(1.5 * px, colors.text.to_color32()));
+    }
 
     changed
 }
 
 #[cfg(test)]
 pub const REFERENCE: Reference = Reference {
-    size: [16.96, 14.0],
+    size: [16.96, 16.5],
     settings: &[],
     cases: &[],
 };
-            
