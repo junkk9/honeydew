@@ -129,7 +129,7 @@ pub fn post_feed(ui: &Ui, instance_id: i32, feed: Option<(MeterSnapshot, &[f32])
 /// The module's analysis as the rack posted it ([`post_feed`]); `None` outside a rack or without a running stream.
 /// While there is one, the next frame comes within 50 ms, as for [`leveller::live_meter`]: the audio moves with no
 /// input to repaint for.
-pub(super) fn live_analysis(ui: &Ui, instance_id: i32) -> Option<Arc<[f32]>> {
+pub(crate) fn live_analysis(ui: &Ui, instance_id: i32) -> Option<Arc<[f32]>> {
     let slab = ui.data(|d| d.get_temp(analysis_id(ui, instance_id)));
     if slab.is_some() {
         ui.ctx()
