@@ -136,13 +136,16 @@ fn dew_serum(
             .map(|path| SampleKey::of_path(&path))
             .and_then(|key| samples.pcm(&key))
             .and_then(|pcm| {
-            let ch = usize::from(pcm.channels).max(1);
-            let mono: Vec<f32> = pcm
-                .samples
-                .chunks_exact(ch)
-                .map(|frame| frame.iter().sum::<f32>() / ch as f32)
-                .collect();
-              honeydew_audio::dewserum::wavetable::CustomTable::from_samples(&mono)
+        let mono: Vec<f32> = if pcm.right.is_empty() {
+                    pcm.left.to_vec()
+                } else {
+                    pcm.left
+                        .iter()
+                        .zip(pcm.right.iter())
+                        .map(|(&a, &b)| 0.5 * (a + b))
+                        .collect()
+                };
+                honeydew_audio::dewserum::wavetable::CustomTable::from_samples(&mono)
             });
         if let Some(ref tbl) = table {
             Arc::as_ptr(tbl).hash(origin);
