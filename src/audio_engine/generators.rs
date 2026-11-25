@@ -9,7 +9,7 @@ use super::samples::{sampler_zones, shape_key};
 use crate::flm::sf2d::Sf2d;
 use crate::panels::cstm::settings_from_cstm;
 use crate::params::{Role, module_spec};
-use crate::sample_cache::SampleCache, SampleKey;
+use crate::sample_cache::{SampleCache, SampleKey};
 use crate::song::plugin::PLUGIN_INSTRUMENT;
 use crate::song::{Channel, ModuleInstance, TimeSig};
 use honeydew_audio::dw_sampler::{DwSampler, DwZone};
@@ -122,6 +122,7 @@ fn gm_synth(module: &ModuleInstance, sample_rate: f32) -> GmSynth {
         synth.set_setting(key, value);
     }
     synth
+}
 fn dew_serum(
     module: &ModuleInstance,
     sample_rate: f32,
