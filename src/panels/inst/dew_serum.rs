@@ -63,7 +63,7 @@ pub fn wire(module: &mut ModuleInstance, state: &mut PanelState) {
                 .filter(|c| c.id != *b"WTOS")
                 .collect();
             let mut writer = ChunkWriter::default();
-            let _ = writer.chunk(*b"WTOS", |w| w.raw(&[osc_idx]));
+            let _ = writer.chunk(*b"WTOS", |w| w.raw(&[osc_idx, 0, 0, 0]));
             for c in kept {
                 let _ = writer.chunk(c.id, |w| w.raw(c.payload));
             }
