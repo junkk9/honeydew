@@ -49,8 +49,11 @@ pub fn wire(module: &mut ModuleInstance, state: &mut PanelState) {
             name.unwrap_or_default(),
         );
     }
-    // Tag `WTOS` in custom_data according to active OSC tab (0 = OSC A, 1 = OSC B)
-    if state.tab <= 1 {
+        // Tag `WTOS` (4-byte aligned for .flm CSTM) only when custom_data already exists or custom table is active
+    let has_custom = choice(module.params[param::OSC_A_TABLE], TABLE_MENU_COUNT) == CUSTOM_MENU_INDEX
+        || choice(module.params[param::OSC_B_TABLE], TABLE_MENU_COUNT) == CUSTOM_MENU_INDEX
+        || module.file.custom_data.is_some();
+    if has_custom && state.tab <= 1 {
         let osc_idx = state.tab as u8;
         let previous = module.file.custom_data.as_deref().unwrap_or_default();
         let current_tag = ChunkIter::new(previous, "CSTM")
@@ -60,7 +63,7 @@ pub fn wire(module: &mut ModuleInstance, state: &mut PanelState) {
         if current_tag != Some(osc_idx) {
             let kept: Vec<_> = ChunkIter::new(previous, "CSTM")
                 .map_while(Result::ok)
-                .filter(|c| c.id != *b"WTOS")
+                .filter(|c| c.id != *b"WTOS" && c.payload.len() % 4 == 0)
                 .collect();
             let mut writer = ChunkWriter::default();
             let _ = writer.chunk(*b"WTOS", |w| w.raw(&[osc_idx, 0, 0, 0]));
@@ -70,7 +73,6 @@ pub fn wire(module: &mut ModuleInstance, state: &mut PanelState) {
             module.file.custom_data = Some(writer.into_bytes());
         }
     }
-}
 
 pub fn custom_picked(module: &ModuleInstance, changed: &[i32]) -> bool {
     if module.type_id != TYPE_ID {
