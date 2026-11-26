@@ -73,6 +73,7 @@ pub fn wire(module: &mut ModuleInstance, state: &mut PanelState) {
             module.file.custom_data = Some(writer.into_bytes());
         }
     }
+}
 
 pub fn custom_picked(module: &ModuleInstance, changed: &[i32]) -> bool {
     if module.type_id != TYPE_ID {
