@@ -788,7 +788,7 @@ impl Voice {
             for (env, params) in self.env_mod.iter_mut().zip(&c.env_mod) {
                 env.advance(params);
             }
-            let tick_sec = f64::from(TICK) / f64::from(sample_rate.max(1.0));
+                let tick_sec = (TICK as f64) / f64::from(sample_rate.max(1.0));
             for l in 0..LFO_COUNT {
                 let one_shot = lfos[l].trig == LfoTrig::Env;
                 let rate_mod = m.get(LFO_RATE_DEST[l]);
