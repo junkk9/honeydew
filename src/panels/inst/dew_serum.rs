@@ -722,6 +722,7 @@ fn draw_lfo_idx(
     let mut dragged_any = false;
     let count = curve.len();
 
+    // 1. Main vertex handles (drag to move, double-click to remove)
     for i in 0..count {
         let (px_norm, py_norm) = curve.point(i);
         let pt_pos = pos2(
@@ -746,6 +747,37 @@ fn draw_lfo_idx(
         }
     }
 
+    // 2. Translucent midpoint bend handles between vertices (drag up/down for tension curve, double-click to reset)
+    let bend_r = 9.0 * px;
+    for i in 0..curve.len().saturating_sub(1) {
+        let (x0, y0) = curve.point(i);
+        let (x1, y1) = curve.point(i + 1);
+        if (x1 - x0).abs() < 0.02 {
+            continue;
+        }
+        let mid_x = 0.5 * (x0 + x1);
+        let mid_y = curve.value(mid_x);
+        let mid_pos = pos2(
+            inner.left() + mid_x * inner.width(),
+            inner.bottom() - mid_y * inner.height(),
+        );
+        let resp = ui.interact(
+            Rect::from_center_size(mid_pos, vec2(bend_r * 2.0, bend_r * 2.0)),
+            ui.id().with(("ds_lfo_bend", lfo_idx, i)),
+            Sense::click_and_drag(),
+        );
+        if resp.double_clicked() {
+            curve.set_bend(i, 0.0);
+            dragged_any = true;
+        } else if resp.dragged() {
+            let dy = -resp.drag_delta().y / (inner.height() * 0.35);
+            let dir = if y1 >= y0 { 1.0 } else { -1.0 };
+            curve.set_bend(i, curve.bend(i) + dy * dir);
+            dragged_any = true;
+        }
+    }
+
+    // 3. Double-click on empty background to insert a new vertex
     let bg_resp = ui.interact(inner, ui.id().with(("ds_lfo_bg", lfo_idx)), Sense::click());
     if bg_resp.double_clicked()
         && curve.len() < MAX_POINTS
@@ -769,7 +801,8 @@ fn draw_lfo_idx(
         }
     }
 
-    let steps = 80usize;
+    // Draw curve line
+    let steps = 96usize;
     let pts: Vec<Pos2> = (0..steps)
         .map(|s| {
             let t = s as f32 / (steps - 1) as f32;
@@ -779,6 +812,26 @@ fn draw_lfo_idx(
         .collect();
     painter.add(Shape::line(pts, Stroke::new(2.0 * px, ink)));
 
+    // Draw translucent tension handles on segments
+    let ghost_fill = ink.gamma_multiply(0.35);
+    let ghost_stroke = Stroke::new(1.2 * px, colors.text.to_color32().gamma_multiply(0.55));
+    for i in 0..curve.len().saturating_sub(1) {
+        let (x0, _) = curve.point(i);
+        let (x1, _) = curve.point(i + 1);
+        if (x1 - x0).abs() < 0.02 {
+            continue;
+        }
+        let mid_x = 0.5 * (x0 + x1);
+        let mid_y = curve.value(mid_x);
+        let mid_pos = pos2(
+            inner.left() + mid_x * inner.width(),
+            inner.bottom() - mid_y * inner.height(),
+        );
+        painter.circle_filled(mid_pos, 3.8 * px, ghost_fill);
+        painter.circle_stroke(mid_pos, 3.8 * px, ghost_stroke);
+    }
+
+    // Draw main vertex handles
     for i in 0..curve.len() {
         let (px_norm, py_norm) = curve.point(i);
         let pt = pos2(
