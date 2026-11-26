@@ -7,8 +7,12 @@ use eframe::egui::{Align2, Color32, Id, Pos2, Rect, Sense, Shape, Stroke, Ui, po
 use honeydew_audio::dewserum::modulation::{
     CURVE_PARAMS, CurvePreset, LfoCurve, MAX_POINTS, choice,
 };
-use honeydew_audio::dewserum::wavetable::{CUSTOM_MENU_INDEX, TABLE_MENU_COUNT, wave_preview};
-use honeydew_audio::dewserum::{ANALYSIS_LEN, ENV_COUNT, FilterKind, LFO_COUNT, SCOPE_SAMPLES, param};
+use honeydew_audio::dewserum::wavetable::{
+    CUSTOM_MENU_INDEX, TABLE_MENU_COUNT, wave_preview_shaped,
+};
+use honeydew_audio::dewserum::{
+    ANALYSIS_LEN, ENV_COUNT, FilterKind, LFO_COUNT, MACRO_COUNT, SCOPE_SAMPLES, WarpMode, param,
+};
 
 use crate::flm::chunk::{ChunkIter, ChunkWriter, ContentPath};
 use crate::metrics::FontSize;
@@ -20,12 +24,10 @@ pub const TYPE_ID: u16 = 53;
 
 const TABS: &str = "OSC A · OSC B · SUB/NOISE · FILTER · ENV · LFO · MATRIX · MASTER";
 const ENV_TABS: &str = "ENV 1 · ENV 2 · ENV 3 · ENV 4";
-const LFO_TABS: &str = "LFO 1 · LFO 2 · LFO 3 · LFO 4";
-const MATRIX_TABS: &str = "Slots 1–4 · Slots 5–8";
-
-const ENV_TAB: &str = "ds_env_tab";
-const LFO_TAB: &str = "ds_lfo_tab";
-const MAT_TAB: &str = "ds_mat_tab";
+const LFO_PAGE_TABS: &str = "LFO 1–4 · LFO 5–8";
+const LFO_TABS_A: &str = "LFO 1 · LFO 2 · LFO 3 · LFO 4";
+const LFO_TABS_B: &str = "LFO 5 · LFO 6 · LFO 7 · LFO 8";
+const MATRIX_TABS: &str = "Slots 1–4 · Slots 5–8 · Slots 9–12 · Slots 13–16";
 
 const T_CUTOFF: usize = 128;
 const T_RES: usize = 129;
@@ -34,6 +36,8 @@ const T_WT_B: usize = 131;
 const T_SYNC_A: usize = 134;
 const T_SYNC_B: usize = 135;
 const T_FM: usize = 136;
+const T_WARP_A: usize = 137;
+const T_WARP_B: usize = 138;
 const T_ACTIVE: usize = 141;
 
 const NOT_OSC_TABS: [Show; 2] = [Show::Not(&Show::Tab(0)), Show::Not(&Show::Tab(1))];
@@ -253,42 +257,54 @@ fn env_page() -> Part {
     children.extend(sub_pages);
     vstack(children)
 }
-
 fn lfo_page() -> Part {
-    let sub_pages: Vec<Part> = (0..LFO_COUNT)
-        .map(|l| {
-            let at = param::lfo_at(l);
-            let b = 51000 + (l as u32) * 100;
-            let draw_fn = match l {
-                0 => draw_lfo_0,
-                1 => draw_lfo_1,
-                2 => draw_lfo_2,
-                _ => draw_lfo_3,
-            };
-            vstack([
-                display(b + 50)
-                    .margins(0.2, 0.2, 0.2, 0.2)
-                    .h(Size::U(4.5))
-                    .draw(draw_fn),
-                hstack([
-                    knob(b + 1, "Rate").p(at + param::LFO_RATE),
-                    spinner(b + 2, "Mode").p(at + param::LFO_MODE),
-                    spinner(b + 3, "Beat").p(at + param::LFO_BEAT),
-                    spinner(b + 4, "Trig").p(at + param::LFO_TRIG),
-                ]),
-            ])
-            .show(Show::Setting(50100, l))
-        })
-        .collect();
+    let make_group = |group_idx: usize, start_lfo: usize, list_id: u32, tabs_str: &'static str| {
+        let sub_pages: Vec<Part> = (0..4)
+            .map(|offset| {
+                let l = start_lfo + offset;
+                let at = param::lfo_at(l);
+                let b = 51000 + (l as u32) * 100;
+                let draw_fn: Draw = match l {
+                    0 => draw_lfo_0,
+                    1 => draw_lfo_1,
+                    2 => draw_lfo_2,
+                    3 => draw_lfo_3,
+                    4 => draw_lfo_4,
+                    5 => draw_lfo_5,
+                    6 => draw_lfo_6,
+                    _ => draw_lfo_7,
+                };
+                vstack([
+                    display(b + 50)
+                        .margins(0.2, 0.2, 0.2, 0.2)
+                        .h(Size::U(4.1))
+                        .draw(draw_fn),
+                    hstack([
+                        knob(b + 1, "Rate").p(at + param::LFO_RATE),
+                        spinner(b + 2, "Mode").p(at + param::LFO_MODE),
+                        spinner(b + 3, "Beat").p(at + param::LFO_BEAT),
+                        spinner(b + 4, "Trig").p(at + param::LFO_TRIG),
+                    ]),
+                ])
+                .show(Show::Setting(list_id, offset))
+            })
+            .collect();
 
-    let mut children = vec![list(50100, LFO_TABS, Bar::Bottom).h(Size::U(1.15))];
-    children.extend(sub_pages);
-    vstack(children)
+        let mut children = vec![list(list_id, tabs_str, Bar::Bottom).h(Size::U(1.05))];
+        children.extend(sub_pages);
+        vstack(children).show(Show::Setting(50050, group_idx))
+    };
+
+    vstack([
+        list(50050, LFO_PAGE_TABS, Bar::Bottom).h(Size::U(1.05)),
+        make_group(0, 0, 50100, LFO_TABS_A),
+        make_group(1, 4, 50200, LFO_TABS_B),
+    ])
 }
 
 fn matrix_page() -> Part {
     let slot_row = |slot: usize| {
-        let at = param::MATRIX + slot * 3;
+        let at = param::slot_at(slot);
         let b = 61000 + (slot as u32) * 10;
         hstack([
             spinner(b + 1, "Source").p(at),
@@ -303,15 +319,34 @@ fn matrix_page() -> Part {
             .show(Show::Setting(60100, 0)),
         vstack([slot_row(4), slot_row(5), slot_row(6), slot_row(7)])
             .show(Show::Setting(60100, 1)),
+        vstack([slot_row(8), slot_row(9), slot_row(10), slot_row(11)])
+            .show(Show::Setting(60100, 2)),
+        vstack([slot_row(12), slot_row(13), slot_row(14), slot_row(15)])
+            .show(Show::Setting(60100, 3)),
     ])
 }
 
 fn master_page() -> Part {
-    hstack([
-        spinner(70100, "Mode").p(param::VOICE_MODE),
-        knob(70150, "Glide").p(param::GLIDE_TIME),
-        spinner(70200, "Voices").p(param::VOICES),
-        knob(70300, "Master").p(param::MASTER),
+    let macro_knobs: Vec<Part> = (0..MACRO_COUNT)
+        .map(|m| {
+            let label = match m {
+                0 => "Macro 1",
+                1 => "Macro 2",
+                2 => "Macro 3",
+                _ => "Macro 4",
+            };
+            knob(70500 + m as u32, label).p(param::macro_at(m))
+        })
+        .collect();
+
+    vstack([
+        hstack([
+            spinner(70100, "Mode").p(param::VOICE_MODE),
+            knob(70150, "Glide").p(param::GLIDE_TIME),
+            spinner(70200, "Voices").p(param::VOICES),
+            knob(70300, "Master").p(param::MASTER),
+        ]),
+        hstack(macro_knobs),
     ])
 }
 
@@ -335,8 +370,8 @@ fn draw_output_scope(
         return Vec::new();
     }
 
-     let slab_arc = live_analysis(ui, module.instance_id);
-let slab = slab_arc.as_deref().unwrap_or(&[]);
+    let slab_arc = live_analysis(ui, module.instance_id);
+    let slab = slab_arc.as_deref().unwrap_or(&[]);
     if slab.len() >= SCOPE_SAMPLES {
         let samples = &slab[0..SCOPE_SAMPLES];
         let points: Vec<Pos2> = samples
@@ -355,7 +390,8 @@ let slab = slab_arc.as_deref().unwrap_or(&[]);
         }
     }
     Vec::new()
-                            }
+}
+
 fn format_hz(hz: f32) -> String {
     if hz >= 1000.0 {
         format!("{:.1} kHz", hz / 1000.0)
@@ -373,19 +409,7 @@ fn draw_wave_a(
     _state: &mut PanelState,
     ink: Color32,
 ) -> Vec<usize> {
-    draw_wave_for(
-        ui,
-        cx,
-        r,
-        module,
-        0usize,
-        param::OSC_A_TABLE,
-        param::OSC_BASE[0usize] + param::WT_POS,
-        T_WT_A,
-        T_SYNC_A,
-        Some(T_FM),
-        ink,
-    );
+    draw_wave_for(ui, cx, r, module, 0usize, ink);
     Vec::new()
 }
 
@@ -398,34 +422,16 @@ fn draw_wave_b(
     _state: &mut PanelState,
     ink: Color32,
 ) -> Vec<usize> {
-    draw_wave_for(
-        ui,
-        cx,
-        r,
-        module,
-        1usize,
-        param::OSC_B_TABLE,
-        param::OSC_BASE[1usize] + param::WT_POS,
-        T_WT_B,
-        T_SYNC_B,
-        None,
-        ink,
-    );
+    draw_wave_for(ui, cx, r, module, 1usize, ink);
     Vec::new()
 }
 
-#[allow(clippy::too_many_arguments)]
 fn draw_wave_for(
     ui: &mut Ui,
     cx: &UiCtx,
     r: Rect,
     module: &ModuleInstance,
     osc: usize,
-    table_param: usize,
-    wt_param: usize,
-    t_wt: usize,
-    t_sync: usize,
-    t_fm: Option<usize>,
     ink: Color32,
 ) {
     let colors = &cx.theme.colors;
@@ -434,19 +440,100 @@ fn draw_wave_for(
     painter.rect_filled(r, 4.0 * px, colors.control_fill.to_color32());
     painter.hline(r.x_range(), r.center().y, Stroke::new(px, colors.background.to_color32()));
 
-     let slab_arc = live_analysis(ui, module.instance_id);
- let slab = slab_arc.as_deref().unwrap_or(&[]);
+    let slab_arc = live_analysis(ui, module.instance_id);
+    let slab = slab_arc.as_deref().unwrap_or(&[]);
     let active = slab.len() >= ANALYSIS_LEN && slab[T_ACTIVE] > 0.5;
 
+    let (table_p, wt_p, sync_p, t_wt, t_sync, t_warp, w_mode_p, w_amt_p) = if osc == 0 {
+        (
+            param::OSC_A_TABLE,
+            param::OSC_BASE[0usize] + param::WT_POS,
+            param::OSC_A_SYNC,
+            T_WT_A,
+            T_SYNC_A,
+            T_WARP_A,
+            param::OSC_A_WARP_MODE,
+            param::OSC_A_WARP,
+        )
+    } else {
+        (
+            param::OSC_B_TABLE,
+            param::OSC_BASE[1usize] + param::WT_POS,
+            param::OSC_B_SYNC,
+            T_WT_B,
+            T_SYNC_B,
+            T_WARP_B,
+            param::OSC_B_WARP_MODE,
+            param::OSC_B_WARP,
+        )
+    };
+
     let table_idx = choice(
-        module.params.get(table_param).copied().unwrap_or(0.0),
+        module.params.get(table_p).copied().unwrap_or(0.0),
         TABLE_MENU_COUNT,
     );
-    let base_wt = module.params.get(wt_param).copied().unwrap_or(0.0);
+    let base_wt = module.params.get(wt_p).copied().unwrap_or(0.0);
     let wt_pos = if active { slab[t_wt] } else { base_wt };
 
-    let mut samples = [0.0f32; 128];
-    wave_preview(osc, table_idx, wt_pos, &mut samples);
+    let base_sync = module.params.get(sync_p).copied().unwrap_or(0.0);
+    let sync_val = if active { slab[t_sync] } else { base_sync };
+
+    let warp_mode = WarpMode::from_param(module.params.get(w_mode_p).copied().unwrap_or(0.0));
+    let base_warp = module.params.get(w_amt_p).copied().unwrap_or(0.0);
+    let warp_val = if active { slab[t_warp] } else { base_warp };
+
+    let fm_val = if osc == 0 {
+        if active {
+            slab[T_FM]
+        } else {
+            module.params.get(param::OSC_A_FM).copied().unwrap_or(0.0)
+        }
+    } else {
+        0.0
+    };
+
+    let mod_table_idx = choice(
+        module.params.get(param::OSC_B_TABLE).copied().unwrap_or(0.0),
+        TABLE_MENU_COUNT,
+    );
+    let mod_pos = if active {
+        slab[T_WT_B]
+    } else {
+        module
+            .params
+            .get(param::OSC_BASE[1usize] + param::WT_POS)
+            .copied()
+            .unwrap_or(0.0)
+    };
+    let mod_sync = if active {
+        slab[T_SYNC_B]
+    } else {
+        module.params.get(param::OSC_B_SYNC).copied().unwrap_or(0.0)
+    };
+    let mod_warp_mode =
+        WarpMode::from_param(module.params.get(param::OSC_B_WARP_MODE).copied().unwrap_or(0.0));
+    let mod_warp = if active {
+        slab[T_WARP_B]
+    } else {
+        module.params.get(param::OSC_B_WARP).copied().unwrap_or(0.0)
+    };
+
+    let mut samples = [0.0f32; 160];
+    wave_preview_shaped(
+        osc,
+        table_idx,
+        wt_pos,
+        sync_val,
+        warp_mode,
+        warp_val,
+        fm_val,
+        mod_table_idx,
+        mod_pos,
+        mod_sync,
+        mod_warp_mode,
+        mod_warp,
+        &mut samples,
+    );
 
     let inner = r.shrink(6.0 * px);
     if inner.width() <= 2.0 || inner.height() <= 2.0 {
@@ -466,24 +553,12 @@ fn draw_wave_for(
 
     painter.add(Shape::line(points, Stroke::new(2.0 * px, ink)));
 
-    let sync_val = if active {
-        slab[t_sync]
-    } else {
-        let p = if osc == 0 {
-            param::OSC_A_SYNC
-        } else {
-            param::OSC_B_SYNC
-        };
-        module.params.get(p).copied().unwrap_or(0.0)
-    };
     let ratio = 1.0 + 15.0 * sync_val * sync_val;
     let mut hud = format!("WT {:.0}%  Sync {:.2}x", wt_pos * 100.0, ratio);
-    if let Some(fm_idx) = t_fm {
-        let fm_val = if active {
-            slab[fm_idx]
-        } else {
-            module.params.get(param::OSC_A_FM).copied().unwrap_or(0.0)
-        };
+    if !matches!(warp_mode, WarpMode::Off) || warp_val > 0.01 {
+        hud.push_str(&format!("  Warp {:.0}%", warp_val * 100.0));
+    }
+    if osc == 0 && fm_val > 0.005 {
         hud.push_str(&format!("  FM {:.0}%", fm_val * 100.0));
     }
     let font = cx.m.font_id(FontSize::Pt8);
@@ -497,8 +572,8 @@ fn draw_wave_for(
     if active {
         ui.ctx().request_repaint();
     }
-    }
-fn draw_filter_curve(
+                }
+     fn draw_filter_curve(
     ui: &mut Ui,
     cx: &UiCtx,
     _id: Id,
@@ -523,8 +598,8 @@ fn draw_filter_curve(
         painter.vline(inner.left() + g * inner.width(), inner.y_range(), grid);
     }
 
-     let slab_arc = live_analysis(ui, module.instance_id);
- let slab = slab_arc.as_deref().unwrap_or(&[]);
+    let slab_arc = live_analysis(ui, module.instance_id);
+    let slab = slab_arc.as_deref().unwrap_or(&[]);
     let active = slab.len() >= ANALYSIS_LEN && slab[T_ACTIVE] > 0.5;
 
     let kind = FilterKind::from_param(module.params.get(param::FILTER_TYPE).copied().unwrap_or(0.0));
@@ -696,7 +771,7 @@ fn draw_env_idx(
         painter.circle_stroke(pt, 5.0 * px, Stroke::new(1.5 * px, colors.text.to_color32()));
     }
     changed
-            }
+}
 fn draw_lfo_0(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> {
     draw_lfo_idx(ui, cx, r, m, 0, ink)
 }
@@ -708,6 +783,18 @@ fn draw_lfo_2(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance,
 }
 fn draw_lfo_3(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> {
     draw_lfo_idx(ui, cx, r, m, 3, ink)
+}
+fn draw_lfo_4(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> {
+    draw_lfo_idx(ui, cx, r, m, 4, ink)
+}
+fn draw_lfo_5(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> {
+    draw_lfo_idx(ui, cx, r, m, 5, ink)
+}
+fn draw_lfo_6(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> {
+    draw_lfo_idx(ui, cx, r, m, 6, ink)
+}
+fn draw_lfo_7(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> {
+    draw_lfo_idx(ui, cx, r, m, 7, ink)
 }
 
 fn draw_lfo_idx(
@@ -748,7 +835,6 @@ fn draw_lfo_idx(
     let mut dragged_any = false;
     let count = curve.len();
 
-    // 1. Main vertex handles (drag to move, double-click to remove)
     for i in 0..count {
         let (px_norm, py_norm) = curve.point(i);
         let pt_pos = pos2(
@@ -773,7 +859,6 @@ fn draw_lfo_idx(
         }
     }
 
-    // 2. Translucent midpoint bend handles between vertices (drag up/down for tension curve, double-click to reset)
     let bend_r = 9.0 * px;
     for i in 0..curve.len().saturating_sub(1) {
         let (x0, y0) = curve.point(i);
@@ -803,7 +888,6 @@ fn draw_lfo_idx(
         }
     }
 
-    // 3. Double-click on empty background to insert a new vertex
     let bg_resp = ui.interact(inner, ui.id().with(("ds_lfo_bg", lfo_idx)), Sense::click());
     if bg_resp.double_clicked()
         && curve.len() < MAX_POINTS
@@ -827,7 +911,6 @@ fn draw_lfo_idx(
         }
     }
 
-    // Draw curve line
     let steps = 96usize;
     let pts: Vec<Pos2> = (0..steps)
         .map(|s| {
@@ -838,7 +921,6 @@ fn draw_lfo_idx(
         .collect();
     painter.add(Shape::line(pts, Stroke::new(2.0 * px, ink)));
 
-    // Draw translucent tension handles on segments
     let ghost_fill = ink.gamma_multiply(0.35);
     let ghost_stroke = Stroke::new(1.2 * px, colors.text.to_color32().gamma_multiply(0.55));
     for i in 0..curve.len().saturating_sub(1) {
@@ -857,7 +939,6 @@ fn draw_lfo_idx(
         painter.circle_stroke(mid_pos, 3.8 * px, ghost_stroke);
     }
 
-    // Draw main vertex handles
     for i in 0..curve.len() {
         let (px_norm, py_norm) = curve.point(i);
         let pt = pos2(
@@ -877,4 +958,4 @@ pub const REFERENCE: Reference = Reference {
     settings: &[],
     cases: &[],
 };
-        
+            
