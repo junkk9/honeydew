@@ -683,6 +683,182 @@ impl ModDest {
         "Noise Level",
         "Glide Time",
     ];
+// ---------------------------------------------------------------------------------------------------------------------
+// Matrix
+// ---------------------------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModSource {
+    None,
+    Lfo1,
+    Lfo2,
+    Lfo3,
+    Lfo4,
+    Lfo5,
+    Lfo6,
+    Lfo7,
+    Lfo8,
+    Env1,
+    Env2,
+    Env3,
+    Env4,
+    Macro1,
+    Macro2,
+    Macro3,
+    Macro4,
+    Velocity,
+    Key,
+    ModWheel,
+}
+
+pub const SOURCE_COUNT: usize = 20;
+
+impl ModSource {
+    pub const ALL: [ModSource; SOURCE_COUNT] = [
+        Self::None,
+        Self::Lfo1,
+        Self::Lfo2,
+        Self::Lfo3,
+        Self::Lfo4,
+        Self::Lfo5,
+        Self::Lfo6,
+        Self::Lfo7,
+        Self::Lfo8,
+        Self::Env1,
+        Self::Env2,
+        Self::Env3,
+        Self::Env4,
+        Self::Macro1,
+        Self::Macro2,
+        Self::Macro3,
+        Self::Macro4,
+        Self::Velocity,
+        Self::Key,
+        Self::ModWheel,
+    ];
+    pub const NAMES: [&'static str; SOURCE_COUNT] = [
+        "None",
+        "LFO 1",
+        "LFO 2",
+        "LFO 3",
+        "LFO 4",
+        "LFO 5",
+        "LFO 6",
+        "LFO 7",
+        "LFO 8",
+        "Env 1",
+        "Env 2",
+        "Env 3",
+        "Env 4",
+        "Macro 1",
+        "Macro 2",
+        "Macro 3",
+        "Macro 4",
+        "Velocity",
+        "Key",
+        "Mod Wheel",
+    ];
+
+    pub fn from_param(v: f32) -> Self {
+        Self::ALL[choice(v, SOURCE_COUNT)]
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModDest {
+    None = 0,
+    OscAWtPos,
+    OscBWtPos,
+    Cutoff,
+    Resonance,
+    OscAPitch,
+    OscBPitch,
+    OscALevel,
+    OscBLevel,
+    OscADetune,
+    OscBDetune,
+    OscASync,
+    OscBSync,
+    OscAFm,
+    OscAWarp,
+    OscBWarp,
+    SubLevel,
+    NoiseColor,
+    NoiseLevel,
+    GlideTime,
+    Lfo1Rate,
+    Lfo2Rate,
+    Lfo3Rate,
+    Lfo4Rate,
+    Lfo5Rate,
+    Lfo6Rate,
+    Lfo7Rate,
+    Lfo8Rate,
+}
+
+pub const DEST_COUNT: usize = 28;
+
+impl ModDest {
+    pub const ALL: [ModDest; DEST_COUNT] = [
+        Self::None,
+        Self::OscAWtPos,
+        Self::OscBWtPos,
+        Self::Cutoff,
+        Self::Resonance,
+        Self::OscAPitch,
+        Self::OscBPitch,
+        Self::OscALevel,
+        Self::OscBLevel,
+        Self::OscADetune,
+        Self::OscBDetune,
+        Self::OscASync,
+        Self::OscBSync,
+        Self::OscAFm,
+        Self::OscAWarp,
+        Self::OscBWarp,
+        Self::SubLevel,
+        Self::NoiseColor,
+        Self::NoiseLevel,
+        Self::GlideTime,
+        Self::Lfo1Rate,
+        Self::Lfo2Rate,
+        Self::Lfo3Rate,
+        Self::Lfo4Rate,
+        Self::Lfo5Rate,
+        Self::Lfo6Rate,
+        Self::Lfo7Rate,
+        Self::Lfo8Rate,
+    ];
+    pub const NAMES: [&'static str; DEST_COUNT] = [
+        "None",
+        "A WT Pos",
+        "B WT Pos",
+        "Cutoff",
+        "Resonance",
+        "A Pitch",
+        "B Pitch",
+        "A Level",
+        "B Level",
+        "A Detune",
+        "B Detune",
+        "A Sync",
+        "B Sync",
+        "A FM Depth",
+        "A Warp",
+        "B Warp",
+        "Sub Level",
+        "Noise Color",
+        "Noise Level",
+        "Glide Time",
+        "LFO 1 Rate",
+        "LFO 2 Rate",
+        "LFO 3 Rate",
+        "LFO 4 Rate",
+        "LFO 5 Rate",
+        "LFO 6 Rate",
+        "LFO 7 Rate",
+        "LFO 8 Rate",
+    ];
 
     pub fn from_param(v: f32) -> Self {
         Self::ALL[choice(v, DEST_COUNT)]
@@ -700,8 +876,9 @@ impl ModDest {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ModInputs {
-    pub lfo: [f32; 4],
+    pub lfo: [f32; 8],
     pub env: [f32; 4],
+    pub macros: [f32; 4],
     pub velocity: f32,
     pub key: f32,
     pub wheel: f32,
@@ -719,10 +896,18 @@ impl ModInputs {
             ModSource::Lfo2 => self.lfo[1usize],
             ModSource::Lfo3 => self.lfo[2usize],
             ModSource::Lfo4 => self.lfo[3usize],
+            ModSource::Lfo5 => self.lfo[4usize],
+            ModSource::Lfo6 => self.lfo[5usize],
+            ModSource::Lfo7 => self.lfo[6usize],
+            ModSource::Lfo8 => self.lfo[7usize],
             ModSource::Env1 => self.env[0usize],
             ModSource::Env2 => self.env[1usize],
             ModSource::Env3 => self.env[2usize],
             ModSource::Env4 => self.env[3usize],
+            ModSource::Macro1 => self.macros[0usize],
+            ModSource::Macro2 => self.macros[1usize],
+            ModSource::Macro3 => self.macros[2usize],
+            ModSource::Macro4 => self.macros[3usize],
             ModSource::Velocity => self.velocity,
             ModSource::Key => self.key,
             ModSource::ModWheel => self.wheel,
@@ -757,7 +942,7 @@ impl Slot {
     }
 }
 
-pub const SLOTS: usize = 8;
+pub const SLOTS: usize = 16;
 pub const SLOT_PARAMS: usize = 3;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
