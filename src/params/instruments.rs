@@ -1096,6 +1096,12 @@ const DS_MOD_DESTS: &[&str] = &[
     "A Sync",
     "B Sync",
     "A FM Depth",
+    "A Warp",
+    "B Warp",
+    "Sub Level",
+    "Noise Color",
+    "Noise Level",
+    "Glide Time",
 ];
 const DS_LFO_BEATS: &[&str] = &[
     "1/8", "1/4", "1/2", "3/4", "1/1", "2/1", "4/1", "8/1", "16/1", "32/1",
@@ -1244,6 +1250,27 @@ const DEWSERUM: &[P] = &[
     P::plain("Osc A Sync", 0.0), // 226
     P::plain("Osc B Sync", 0.0), // 227
     P::plain("Osc A FM", 0.0), // 228
+        P::menu(
+        "Osc A Warp Mode",
+        0.0,
+        &["Off", "Bend+", "Bend-", "Bend+/-", "PWM", "Mirror"],
+    ), // 229
+    P::plain("Osc A Warp", 0.0), // 230
+    P::menu(
+        "Osc B Warp Mode",
+        0.0,
+        &["Off", "Bend+", "Bend-", "Bend+/-", "PWM", "Mirror"],
+    ), // 231
+    P::plain("Osc B Warp", 0.0), // 232
+    P::menu("Sub Shape", 0.0, &["Sine", "Triangle", "Saw", "Square"]), // 233
+    P::menu("Sub Octave", 0.5, &["-2 Oct", "-1 Oct", "0 Oct"]), // 234
+    P::plain("Sub Level", 0.0), // 235
+    P::toggle("Sub Direct Out", 0.0), // 236
+    P::menu("Noise Type", 0.0, &["White", "Pink", "Metallic"]), // 237
+    P::plain("Noise Color", 0.5), // 238
+    P::plain("Noise Level", 0.0), // 239
+    P::menu("Voice Mode", 0.0, &["Poly", "Mono", "Legato"]), // 240
+    P::plain("Glide Time", 0.0), // 241
     
 ];
 pub static MODULES: &[ModuleSpec] = &[
@@ -1302,6 +1329,6 @@ pub static MODULES: &[ModuleSpec] = &[
         "DewSerum",
         "DewSerum",
         DEWSERUM,
-        &["OSC A", "OSC B", "FILTER", "ENV", "LFO", "MATRIX", "MASTER"],
+        &["OSC A", "OSC B", "SUB/NOISE", "FILTER", "ENV", "LFO", "MATRIX", "MASTER"],
     ),
 ];
