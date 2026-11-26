@@ -18,7 +18,7 @@ use crate::ui::UiCtx;
 
 pub const TYPE_ID: u16 = 53;
 
-const TABS: &str = "OSC A · OSC B · FILTER · ENV · LFO · MATRIX · MASTER";
+const TABS: &str = "OSC A · OSC B · SUB/NOISE · FILTER · ENV · LFO · MATRIX · MASTER";
 const ENV_TABS: &str = "ENV 1 · ENV 2 · ENV 3 · ENV 4";
 const LFO_TABS: &str = "LFO 1 · LFO 2 · LFO 3 · LFO 4";
 const MATRIX_TABS: &str = "Slots 1–4 · Slots 5–8";
@@ -49,7 +49,6 @@ pub fn wire(module: &mut ModuleInstance, state: &mut PanelState) {
             name.unwrap_or_default(),
         );
     }
-        // Tag `WTOS` (4-byte aligned for .flm CSTM) only when custom_data already exists or custom table is active
     let has_custom = choice(module.params[param::OSC_A_TABLE], TABLE_MENU_COUNT) == CUSTOM_MENU_INDEX
         || choice(module.params[param::OSC_B_TABLE], TABLE_MENU_COUNT) == CUSTOM_MENU_INDEX
         || module.file.custom_data.is_some();
@@ -125,6 +124,8 @@ pub fn panel() -> Option<Panel> {
             10000,
             param::OSC_BASE[0usize],
             param::OSC_A_SYNC,
+            param::OSC_A_WARP_MODE,
+            param::OSC_A_WARP,
             Some(param::OSC_A_FM),
             draw_wave_a,
         )
@@ -133,21 +134,27 @@ pub fn panel() -> Option<Panel> {
             20000,
             param::OSC_BASE[1usize],
             param::OSC_B_SYNC,
+            param::OSC_B_WARP_MODE,
+            param::OSC_B_WARP,
             None,
-            draw_wave_b,
+            draw_wav3e_b,
         )
         .show(Show::Tab(1)),
-        filter_page().show(Show::Tab(2)),
-        env_page().show(Show::Tab(3)),
-        lfo_page().show(Show::Tab(4)),
-        matrix_page().show(Show::Tab(5)),
-        master_page().show(Show::Tab(6)),
+        sub_noise_page().show(Show::Tab(2)),
+        filter_page().show(Show::Tab(3)),
+        env_page().show(Show::Tab(4)),
+        lfo_page().show(Show::Tab(5)),
+        matrix_page().show(Show::Tab(6)),
+        master_page().show(Show::Tab(7)),
     ])))
 }
+
 fn osc_page(
     id_base: u32,
     base: usize,
     sync_param: usize,
+    warp_mode_param: usize,
+    warp_param: usize,
     fm_param: Option<usize>,
     draw_fn: Draw,
 ) -> Part {
@@ -156,6 +163,8 @@ fn osc_page(
         knob(id_base + 500, "Fine").p(base + param::FINE),
         spinner(id_base + 600, "Unison").p(base + param::UNISON),
         knob(id_base + 650, "Sync").p(sync_param),
+        spinner(id_base + 660, "Warp Mode").p(warp_mode_param),
+        knob(id_base + 670, "Warp").p(warp_param),
     ];
     if let Some(fm) = fm_param {
         bottom.push(knob(id_base + 680, "FM <- B").p(fm));
@@ -177,6 +186,22 @@ fn osc_page(
         ])
         .h(Size::U(4.6)),
         hstack(bottom),
+    ])
+}
+
+fn sub_noise_page() -> Part {
+    vstack([
+        hstack([
+            spinner(25100, "Sub Shape").p(param::SUB_SHAPE),
+            spinner(25200, "Sub Oct").p(param::SUB_OCTAVE),
+            toggle(25300, "Direct Out").p(param::SUB_DIRECT),
+            knob(25400, "Sub Level").p(param::SUB_LEVEL),
+        ]),
+        hstack([
+            spinner(26100, "Noise Type").p(param::NOISE_KIND),
+            knob(26200, "Color").p(param::NOISE_COLOR),
+            knob(26300, "Noise Level").p(param::NOISE_LEVEL),
+        ]),
     ])
 }
 
@@ -283,10 +308,10 @@ fn matrix_page() -> Part {
 
 fn master_page() -> Part {
     hstack([
-        spacer(70100),
+        spinner(70100, "Mode").p(param::VOICE_MODE),
+        knob(70150, "Glide").p(param::GLIDE_TIME),
         spinner(70200, "Voices").p(param::VOICES),
         knob(70300, "Master").p(param::MASTER),
-        spacer(70400),
     ])
 }
 
