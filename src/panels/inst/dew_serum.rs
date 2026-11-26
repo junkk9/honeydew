@@ -137,7 +137,7 @@ pub fn panel() -> Option<Panel> {
             param::OSC_B_WARP_MODE,
             param::OSC_B_WARP,
             None,
-            draw_wav3e_b,
+            draw_wave_b,
         )
         .show(Show::Tab(1)),
         sub_noise_page().show(Show::Tab(2)),
