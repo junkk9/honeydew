@@ -1,4 +1,4 @@
-//! DewSerum: a two-oscillator wavetable synth with Sub, Noise, Warp, Glide, 4 ADSR, 4 LFO & 8-slot Matrix.
+//! DewSerum: two-oscillator wavetable synth with Sub, Noise, Warp, Glide, 4 ADSR, 8 LFO, 4 Macros & 16-slot Matrix.
 
 pub mod modulation;
 pub mod wavetable;
@@ -8,10 +8,11 @@ use std::sync::Arc;
 use crate::ProcessContext;
 use crate::biquad::{Biquad, Response};
 use crate::instrument::Instrument;
+use crate::voice::{LFO_SYNC_BEATS, lfo_rate_hz, tempo_step};
 
 use modulation::{
     AdsrParams, CurvePreset, Envelope, Lfo, LfoCurve, LfoSettings, LfoTable, LfoTrig, ModDest,
-    ModInputs, ModMatrix, SLOT_PARAMS, SLOTS, choice,
+    ModInputs, ModMatrix, SLOT_PARAMS, choice,
 };
 use wavetable::{
     CUSTOM_MENU_INDEX, CustomTable, Reader, TABLE_MENU_COUNT, WavetableBank, bank,
@@ -21,8 +22,9 @@ use wavetable::{
 pub const TICK: usize = 32;
 pub const MAX_VOICES: usize = 8;
 pub const MAX_UNISON: usize = 12;
-pub const LFO_COUNT: usize = 4;
+pub const LFO_COUNT: usize = 8;
 pub const ENV_COUNT: usize = 4;
+pub const MACRO_COUNT: usize = 4;
 const COMB_BUF_LEN: usize = 4096;
 
 pub const SCOPE_SAMPLES: usize = 128;
@@ -91,7 +93,6 @@ impl WarpMode {
     }
 }
 
-/// Applies Serum-style phase warping to a 32-bit phase accumulator.
 #[inline]
 pub fn apply_warp(phase: u32, mode: WarpMode, amount: f32) -> u32 {
     if matches!(mode, WarpMode::Off) || amount <= 1e-4 {
@@ -203,10 +204,9 @@ impl VoiceMode {
         }
     }
 }
-
 pub mod param {
-    use super::modulation::{CURVE_PARAMS, SLOT_PARAMS, SLOTS};
-    use super::{ENV_COUNT, LFO_COUNT};
+    use super::modulation::{CURVE_PARAMS, SLOT_PARAMS};
+    use super::ENV_COUNT;
 
     pub const ENABLE: usize = 0;
     pub const OSC_BASE: [usize; 2] = [1usize, 9usize];
@@ -228,6 +228,7 @@ pub mod param {
     pub const ENV_BASE: usize = 21;
     pub const ENV_PARAMS: usize = 4;
 
+    // LFO 1..4 settings (37..=52)
     pub const LFO_BASE: usize = ENV_BASE + ENV_COUNT * ENV_PARAMS;
     pub const LFO_PARAMS: usize = 4;
     pub const LFO_RATE: usize = 0;
@@ -235,12 +236,14 @@ pub mod param {
     pub const LFO_BEAT: usize = 2;
     pub const LFO_TRIG: usize = 3;
 
-    pub const MATRIX: usize = LFO_BASE + LFO_COUNT * LFO_PARAMS;
-    pub const MASTER: usize = MATRIX + SLOTS * SLOT_PARAMS;
-    pub const VOICES: usize = MASTER + 1;
+    // Matrix slots 1..8 (53..=76)
+    pub const MATRIX: usize = LFO_BASE + 4 * LFO_PARAMS;
+    pub const MASTER: usize = MATRIX + 8 * SLOT_PARAMS; // 77
+    pub const VOICES: usize = MASTER + 1; // 78
 
+    // LFO 1..4 curves (79..=222)
     pub const LFO_CURVE: usize = VOICES + 1;
-    pub const FILTER_DRIVE: usize = LFO_CURVE + LFO_COUNT * CURVE_PARAMS;
+    pub const FILTER_DRIVE: usize = LFO_CURVE + 4 * CURVE_PARAMS; // 223
     pub const OSC_A_TABLE: usize = FILTER_DRIVE + 1; // 224
     pub const OSC_B_TABLE: usize = OSC_A_TABLE + 1; // 225
     pub const OSC_A_SYNC: usize = OSC_B_TABLE + 1; // 226
@@ -248,35 +251,61 @@ pub mod param {
     pub const OSC_A_FM: usize = OSC_B_SYNC + 1; // 228
 
     // Stage 5.1 additions (229..=241)
-    pub const OSC_A_WARP_MODE: usize = OSC_A_FM + 1; // 229
-    pub const OSC_A_WARP: usize = OSC_A_WARP_MODE + 1; // 230
-    pub const OSC_B_WARP_MODE: usize = OSC_A_WARP + 1; // 231
-    pub const OSC_B_WARP: usize = OSC_B_WARP_MODE + 1; // 232
+    pub const OSC_A_WARP_MODE: usize = 229;
+    pub const OSC_A_WARP: usize = 230;
+    pub const OSC_B_WARP_MODE: usize = 231;
+    pub const OSC_B_WARP: usize = 232;
 
-    pub const SUB_SHAPE: usize = OSC_B_WARP + 1; // 233
-    pub const SUB_OCTAVE: usize = SUB_SHAPE + 1; // 234
-    pub const SUB_LEVEL: usize = SUB_OCTAVE + 1; // 235
-    pub const SUB_DIRECT: usize = SUB_LEVEL + 1; // 236
+    pub const SUB_SHAPE: usize = 233;
+    pub const SUB_OCTAVE: usize = 234;
+    pub const SUB_LEVEL: usize = 235;
+    pub const SUB_DIRECT: usize = 236;
 
-    pub const NOISE_KIND: usize = SUB_DIRECT + 1; // 237
-    pub const NOISE_COLOR: usize = NOISE_KIND + 1; // 238
-    pub const NOISE_LEVEL: usize = NOISE_COLOR + 1; // 239
+    pub const NOISE_KIND: usize = 237;
+    pub const NOISE_COLOR: usize = 238;
+    pub const NOISE_LEVEL: usize = 239;
 
-    pub const VOICE_MODE: usize = NOISE_LEVEL + 1; // 240
-    pub const GLIDE_TIME: usize = VOICE_MODE + 1; // 241
+    pub const VOICE_MODE: usize = 240;
+    pub const GLIDE_TIME: usize = 241;
 
-    pub const COUNT: usize = GLIDE_TIME + 1; // 242
+    // Stage 5.2 additions (242..=429): LFO 5..8 settings, LFO 5..8 curves, Matrix slots 9..16, Macros 1..4
+    pub const LFO_EXT_BASE: usize = 242; // 242..=257 (4 * 4)
+    pub const LFO_EXT_CURVE: usize = LFO_EXT_BASE + 4 * LFO_PARAMS; // 258..=401 (4 * 36)
+    pub const MATRIX_EXT: usize = LFO_EXT_CURVE + 4 * CURVE_PARAMS; // 402..=425 (8 * 3)
+    pub const MACRO_BASE: usize = MATRIX_EXT + 8 * SLOT_PARAMS; // 426..=429 (4)
+
+    pub const COUNT: usize = MACRO_BASE + 4; // 430
 
     pub const fn env_at(index: usize) -> usize {
         ENV_BASE + index * ENV_PARAMS
     }
 
     pub const fn lfo_at(index: usize) -> usize {
-        LFO_BASE + index * LFO_PARAMS
+        if index < 4 {
+            LFO_BASE + index * LFO_PARAMS
+        } else {
+            LFO_EXT_BASE + (index - 4) * LFO_PARAMS
+        }
     }
 
     pub const fn curve_at(index: usize) -> usize {
-        LFO_CURVE + index * CURVE_PARAMS
+        if index < 4 {
+            LFO_CURVE + index * CURVE_PARAMS
+        } else {
+            LFO_EXT_CURVE + (index - 4) * CURVE_PARAMS
+        }
+    }
+
+    pub const fn slot_at(index: usize) -> usize {
+        if index < 8 {
+            MATRIX + index * SLOT_PARAMS
+        } else {
+            MATRIX_EXT + (index - 8) * SLOT_PARAMS
+        }
+    }
+
+    pub const fn macro_at(index: usize) -> usize {
+        MACRO_BASE + index
     }
 }
 
@@ -310,7 +339,7 @@ pub fn defaults() -> [f32; PARAM_COUNT] {
     p[OSC_B_WARP] = 0.0;
 
     p[SUB_SHAPE] = 0.0;
-    p[SUB_OCTAVE] = 0.5; // -1 Oct
+    p[SUB_OCTAVE] = 0.5;
     p[SUB_LEVEL] = 0.0;
     p[SUB_DIRECT] = 0.0;
 
@@ -318,7 +347,7 @@ pub fn defaults() -> [f32; PARAM_COUNT] {
     p[NOISE_COLOR] = 0.5;
     p[NOISE_LEVEL] = 0.0;
 
-    p[VOICE_MODE] = 0.0; // Poly
+    p[VOICE_MODE] = 0.0;
     p[GLIDE_TIME] = 0.0;
 
     p[env_at(0usize)..env_at(0usize) + 4].copy_from_slice(&[0.2, 0.5, 0.8, 0.4]);
@@ -329,9 +358,12 @@ pub fn defaults() -> [f32; PARAM_COUNT] {
         let at = lfo_at(l);
         p[at..at + 4].copy_from_slice(&[0.5, 0.0, 4.0 / 9.0, 0.0]);
     }
-    for slot in 0..SLOTS {
-        let at = MATRIX + slot * SLOT_PARAMS;
+    for slot in 0..16 {
+        let at = slot_at(slot);
         p[at..at + SLOT_PARAMS].copy_from_slice(&[0.0, 0.0, 0.5]);
+    }
+    for m in 0..MACRO_COUNT {
+        p[macro_at(m)] = 0.0;
     }
     p[MASTER] = 0.7;
     p[VOICES] = 1.0;
@@ -341,8 +373,8 @@ pub fn defaults() -> [f32; PARAM_COUNT] {
         p[at..at + modulation::CURVE_PARAMS].copy_from_slice(&default_curve);
     }
     p
-}
-// ---------------------------------------------------------------------------------------------------------------------
+        }
+    // ---------------------------------------------------------------------------------------------------------------------
 // Param laws & Control
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -387,6 +419,7 @@ struct VoiceTelemetry {
     pitch_mod: [f32; 2],
     sync: [f32; 2],
     fm_depth: f32,
+    warp: [f32; 2],
     detune: [f32; 2],
     level: [f32; 2],
 }
@@ -407,6 +440,14 @@ struct OscControl {
 }
 
 #[derive(Clone, Copy)]
+struct LfoBaseCtrl {
+    rate: f32,
+    sync: bool,
+    beat: f32,
+    trig: LfoTrig,
+}
+
+#[derive(Clone, Copy)]
 struct Control {
     osc: [OscControl; 2],
     fm_from_b: f32,
@@ -419,6 +460,8 @@ struct Control {
     noise_level: f32,
     voice_mode: VoiceMode,
     glide_time: f32,
+    macros: [f32; MACRO_COUNT],
+    lfo_ctrl: [LfoBaseCtrl; LFO_COUNT],
     env1: AdsrParams,
     env_mod: [AdsrParams; 3],
     matrix: ModMatrix,
@@ -470,6 +513,22 @@ impl Control {
             1 => -12.0,
             _ => 0.0,
         };
+        let mut slot_buf = [0.0f32; 16 * SLOT_PARAMS];
+        for s in 0..16 {
+            let at = param::slot_at(s);
+            slot_buf[s * SLOT_PARAMS..(s + 1) * SLOT_PARAMS]
+                .copy_from_slice(&p[at..at + SLOT_PARAMS]);
+        }
+        let lfo_ctrl = std::array::from_fn(|l| {
+            let at = param::lfo_at(l);
+            LfoBaseCtrl {
+                rate: p[at + param::LFO_RATE].clamp(0.0, 1.0),
+                sync: p[at + param::LFO_MODE] >= 0.5,
+                beat: p[at + param::LFO_BEAT].clamp(0.0, 1.0),
+                trig: LfoTrig::from_param(p[at + param::LFO_TRIG]),
+            }
+        });
+        let macros = std::array::from_fn(|m| p[param::macro_at(m)].clamp(0.0, 1.0));
         Self {
             osc,
             fm_from_b: p[param::OSC_A_FM].clamp(0.0, 1.0),
@@ -482,15 +541,15 @@ impl Control {
             noise_level: p[param::NOISE_LEVEL].clamp(0.0, 1.0),
             voice_mode: VoiceMode::from_param(p[param::VOICE_MODE]),
             glide_time: p[param::GLIDE_TIME].clamp(0.0, 1.0),
+            macros,
+            lfo_ctrl,
             env1: adsr(0usize, sample_rate),
             env_mod: [
                 adsr(1usize, tick_rate),
                 adsr(2usize, tick_rate),
                 adsr(3usize, tick_rate),
             ],
-            matrix: ModMatrix::from_params(
-                &p[param::MATRIX..param::MATRIX + SLOTS * SLOT_PARAMS],
-            ),
+            matrix: ModMatrix::from_params(&slot_buf),
             filter_kind: FilterKind::from_param(p[param::FILTER_TYPE]),
             cutoff_oct: 20f32.log2() + 10.0 * p[param::CUTOFF],
             resonance: p[param::RESONANCE],
@@ -504,8 +563,8 @@ impl Control {
             wheel,
         }
     }
-    }
-// ---------------------------------------------------------------------------------------------------------------------
+                      }
+  // ---------------------------------------------------------------------------------------------------------------------
 // Voices
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -515,6 +574,16 @@ const LEVEL_DEST: [ModDest; 2] = [ModDest::OscALevel, ModDest::OscBLevel];
 const DETUNE_DEST: [ModDest; 2] = [ModDest::OscADetune, ModDest::OscBDetune];
 const SYNC_DEST: [ModDest; 2] = [ModDest::OscASync, ModDest::OscBSync];
 const WARP_DEST: [ModDest; 2] = [ModDest::OscAWarp, ModDest::OscBWarp];
+const LFO_RATE_DEST: [ModDest; LFO_COUNT] = [
+    ModDest::Lfo1Rate,
+    ModDest::Lfo2Rate,
+    ModDest::Lfo3Rate,
+    ModDest::Lfo4Rate,
+    ModDest::Lfo5Rate,
+    ModDest::Lfo6Rate,
+    ModDest::Lfo7Rate,
+    ModDest::Lfo8Rate,
+];
 
 struct Rng(u32);
 
@@ -679,24 +748,17 @@ impl Voice {
                 env.gate_off();
             }
         }
-                   }
-                fn update(
+    }
+      #[allow(clippy::too_many_arguments)]
+    fn update(
         &mut self,
         c: &Control,
         tables: &[LfoTable; LFO_COUNT],
         lfos: &[LfoSettings; LFO_COUNT],
+        tempo_bpm: f32,
         sample_rate: f32,
         advance: bool,
     ) {
-        if advance {
-            for (env, params) in self.env_mod.iter_mut().zip(&c.env_mod) {
-                env.advance(params);
-            }
-            for l in 0..LFO_COUNT {
-                let one_shot = lfos[l].trig == LfoTrig::Env;
-                self.lfo[l].advance(lfos[l].step, one_shot);
-            }
-        }
         for l in 0..LFO_COUNT {
             let raw = self.lfo[l].value(&tables[l]);
             if self.fresh {
@@ -715,13 +777,42 @@ impl Voice {
                 self.env_mod[1usize].level(),
                 self.env_mod[2usize].level(),
             ],
+            macros: c.macros,
             velocity: self.velocity,
             key: ModInputs::key_value(pre_pitch),
             wheel: c.wheel,
         };
         let m = c.matrix.evaluate(&inputs);
 
-        // Glide / Portamento
+        if advance {
+            for (env, params) in self.env_mod.iter_mut().zip(&c.env_mod) {
+                env.advance(params);
+            }
+            let tick_sec = f64::from(TICK) / f64::from(sample_rate.max(1.0));
+            for l in 0..LFO_COUNT {
+                let one_shot = lfos[l].trig == LfoTrig::Env;
+                let rate_mod = m.get(LFO_RATE_DEST[l]);
+                let step = if rate_mod.abs() > 1e-5 {
+                    if c.lfo_ctrl[l].sync {
+                        let bpm = if tempo_bpm.is_finite() && tempo_bpm > 0.0 {
+                            tempo_bpm
+                        } else {
+                            120.0
+                        };
+                        let beat_v = (c.lfo_ctrl[l].beat + rate_mod).clamp(0.0, 1.0);
+                        let beats = f64::from(tempo_step(&LFO_SYNC_BEATS, beat_v));
+                        (f64::from(bpm) / (60.0 * beats) * tick_sec).min(0.5)
+                    } else {
+                        let rate_v = (c.lfo_ctrl[l].rate + rate_mod).clamp(0.0, 1.0);
+                        (f64::from(lfo_rate_hz(rate_v)) * tick_sec).min(0.5)
+                    }
+                } else {
+                    lfos[l].step
+                };
+                self.lfo[l].advance(step, one_shot);
+            }
+        }
+
         let glide_norm = (c.glide_time + m.get(ModDest::GlideTime)).clamp(0.0, 1.0);
         if glide_norm <= 1e-4 {
             self.current_pitch = self.target_pitch;
@@ -739,7 +830,8 @@ impl Voice {
             let sync_val = (osc.sync + m.get(SYNC_DEST[o])).clamp(0.0, 1.0);
             let ratio = 1.0 + 15.0 * sync_val * sync_val;
             self.sync_mult[o] = (ratio * 65536.0) as u64;
-            self.warp_amt[o] = (osc.warp + m.get(WARP_DEST[o])).clamp(0.0, 1.0);
+            let warp_val = (osc.warp + m.get(WARP_DEST[o])).clamp(0.0, 1.0);
+            self.warp_amt[o] = warp_val;
 
             let morph_pos = (osc.wt_pos + m.get(WT_DEST[o])).clamp(0.0, 1.0);
             let pitch_mod = m.get(PITCH_DEST[o]);
@@ -752,6 +844,7 @@ impl Voice {
             self.telemetry.wt_pos[o] = morph_pos;
             self.telemetry.pitch_mod[o] = pitch_mod;
             self.telemetry.sync[o] = sync_val;
+            self.telemetry.warp[o] = warp_val;
             self.telemetry.detune[o] = detune;
             self.telemetry.level[o] = level;
 
@@ -772,14 +865,12 @@ impl Voice {
             }
         }
 
-        // Sub oscillator
         let sub_lvl = (c.sub_level + m.get(ModDest::SubLevel)).clamp(0.0, 1.0);
         self.sub_gain = sub_lvl * sub_lvl;
         let sub_note = (pitch + c.sub_octave).clamp(-48.0, 160.0);
         let sub_freq = (440.0 * ((sub_note - 69.0) / 12.0).exp2()).min(0.49 * sample_rate);
         self.sub_inc = (f64::from(sub_freq) / f64::from(sample_rate) * 4_294_967_296.0) as u32;
 
-        // Noise oscillator
         let noise_lvl = (c.noise_level + m.get(ModDest::NoiseLevel)).clamp(0.0, 1.0);
         self.noise_gain = noise_lvl * noise_lvl * 0.65;
         let color = (c.noise_color + m.get(ModDest::NoiseColor)).clamp(0.0, 1.0);
@@ -845,9 +936,8 @@ impl Voice {
         let pan = (self.pan + self.slide[1usize]).clamp(0.0, 1.0);
         self.pan_gain = [(2.0 - 2.0 * pan).min(1.0), (2.0 * pan).min(1.0)];
         self.fresh = false;
-    }
-
-    #[inline]
+            }
+      #[inline]
     fn filter_sample(&mut self, ch: usize, x: f32, kind: FilterKind) -> f32 {
         match kind {
             FilterKind::Lp12 | FilterKind::Hp12 | FilterKind::Bp12 | FilterKind::Notch => {
@@ -868,7 +958,8 @@ impl Voice {
                 out
             }
         }
-                }
+    }
+
     #[inline]
     fn sub_sample(&mut self, shape: SubShape) -> f32 {
         self.sub_phase = self.sub_phase.wrapping_add(self.sub_inc);
@@ -1022,8 +1113,8 @@ impl Voice {
             mix[1usize][i] += fr * amp * self.pan_gain[1usize];
         }
     }
-                }
- // ---------------------------------------------------------------------------------------------------------------------
+            }
+    // ---------------------------------------------------------------------------------------------------------------------
 // The instrument
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -1157,15 +1248,16 @@ impl DewSerum {
         for l in 0..LFO_COUNT {
             self.free_phases[l] = (self.free_phases[l] + self.lfo_settings[l].step).rem_euclid(1.0);
         }
-        let (control, tables, lfos, rate) = (
+        let (control, tables, lfos, bpm, rate) = (
             &self.control,
             &self.lfo_tables,
             &self.lfo_settings,
+            self.tempo_bpm,
             self.sample_rate,
         );
         for voice in &mut self.voices {
             if !voice.env1.is_idle() {
-                voice.update(control, tables, lfos, rate, true);
+                voice.update(control, tables, lfos, bpm, rate, true);
             }
         }
         self.master_step = (self.control.master - self.master_now) / TICK as f32;
@@ -1216,11 +1308,12 @@ impl DewSerum {
             &self.control,
             &self.lfo_tables,
             &lfos,
+            self.tempo_bpm,
             self.sample_rate,
             false,
         );
-                }
-    fn update_analysis(&mut self) {
+            }
+        fn update_analysis(&mut self) {
         for i in 0..SCOPE_SAMPLES {
             self.analysis_buf[i] = self.scope_ring[(self.scope_pos + i) % SCOPE_SAMPLES];
         }
@@ -1242,8 +1335,8 @@ impl DewSerum {
                 t.sync[0usize],
                 t.sync[1usize],
                 t.fm_depth,
-                t.detune[0usize],
-                t.detune[1usize],
+                t.warp[0usize],
+                t.warp[1usize],
                 t.level[0usize],
                 t.level[1usize],
                 1.0,
@@ -1261,8 +1354,14 @@ impl Instrument for DewSerum {
             return;
         }
         self.params[index] = value.clamp(0.0, 1.0);
-        if index >= param::LFO_CURVE && index < param::FILTER_DRIVE {
-            let lfo_idx = (index - param::LFO_CURVE) / modulation::CURVE_PARAMS;
+        if (index >= param::LFO_CURVE && index < param::FILTER_DRIVE)
+            || (index >= param::LFO_EXT_CURVE && index < param::MATRIX_EXT)
+        {
+            let lfo_idx = if index < param::FILTER_DRIVE {
+                (index - param::LFO_CURVE) / modulation::CURVE_PARAMS
+            } else {
+                4 + (index - param::LFO_EXT_CURVE) / modulation::CURVE_PARAMS
+            };
             if lfo_idx < LFO_COUNT {
                 self.curve_dirty[lfo_idx] = true;
             }
@@ -1372,5 +1471,5 @@ impl Instrument for DewSerum {
     fn analysis(&self) -> &[f32] {
         &self.analysis_buf
     }
-                }
-        
+                                                    }
+                
