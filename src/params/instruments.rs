@@ -1073,10 +1073,18 @@ const DS_MOD_SOURCES: &[&str] = &[
     "LFO 2",
     "LFO 3",
     "LFO 4",
+    "LFO 5",
+    "LFO 6",
+    "LFO 7",
+    "LFO 8",
     "Env 1",
     "Env 2",
     "Env 3",
     "Env 4",
+    "Macro 1",
+    "Macro 2",
+    "Macro 3",
+    "Macro 4",
     "Velocity",
     "Key",
     "Mod Wheel",
@@ -1102,6 +1110,14 @@ const DS_MOD_DESTS: &[&str] = &[
     "Noise Color",
     "Noise Level",
     "Glide Time",
+    "LFO 1 Rate",
+    "LFO 2 Rate",
+    "LFO 3 Rate",
+    "LFO 4 Rate",
+    "LFO 5 Rate",
+    "LFO 6 Rate",
+    "LFO 7 Rate",
+    "LFO 8 Rate",
 ];
 const DS_LFO_BEATS: &[&str] = &[
     "1/8", "1/4", "1/2", "3/4", "1/1", "2/1", "4/1", "8/1", "16/1", "32/1",
@@ -1271,7 +1287,69 @@ const DEWSERUM: &[P] = &[
     P::plain("Noise Level", 0.0), // 239
     P::menu("Voice Mode", 0.0, &["Poly", "Mono", "Legato"]), // 240
     P::plain("Glide Time", 0.0), // 241
-    
+        // LFO 5..8 settings (242..=257)
+    P::cont("LFO 5 Rate", 0.5, LFO_RATE), P::menu("LFO 5 Mode", 0.0, &["Hertz", "Sync"]), P::menu("LFO 5 Beat", 4.0 / 9.0, DS_LFO_BEATS), P::menu("LFO 5 Trig", 0.0, DS_LFO_TRIGS),
+    P::cont("LFO 6 Rate", 0.5, LFO_RATE), P::menu("LFO 6 Mode", 0.0, &["Hertz", "Sync"]), P::menu("LFO 6 Beat", 4.0 / 9.0, DS_LFO_BEATS), P::menu("LFO 6 Trig", 0.0, DS_LFO_TRIGS),
+    P::cont("LFO 7 Rate", 0.5, LFO_RATE), P::menu("LFO 7 Mode", 0.0, &["Hertz", "Sync"]), P::menu("LFO 7 Beat", 4.0 / 9.0, DS_LFO_BEATS), P::menu("LFO 7 Trig", 0.0, DS_LFO_TRIGS),
+    P::cont("LFO 8 Rate", 0.5, LFO_RATE), P::menu("LFO 8 Mode", 0.0, &["Hertz", "Sync"]), P::menu("LFO 8 Beat", 4.0 / 9.0, DS_LFO_BEATS), P::menu("LFO 8 Trig", 0.0, DS_LFO_TRIGS),
+    // LFO 5 Curve (258..=293)
+    P::plain("LFO 5 Points", 0.2),
+    P::plain("LFO 5 P0 X", 0.0), P::plain("LFO 5 P0 Y", 0.5), P::plain("LFO 5 P1 X", 0.25), P::plain("LFO 5 P1 Y", 1.0),
+    P::plain("LFO 5 P2 X", 0.75), P::plain("LFO 5 P2 Y", 0.0), P::plain("LFO 5 P3 X", 1.0), P::plain("LFO 5 P3 Y", 0.5),
+    P::plain("LFO 5 P4 X", 1.0), P::plain("LFO 5 P4 Y", 0.5), P::plain("LFO 5 P5 X", 1.0), P::plain("LFO 5 P5 Y", 0.5),
+    P::plain("LFO 5 P6 X", 1.0), P::plain("LFO 5 P6 Y", 0.5), P::plain("LFO 5 P7 X", 1.0), P::plain("LFO 5 P7 Y", 0.5),
+    P::plain("LFO 5 P8 X", 1.0), P::plain("LFO 5 P8 Y", 0.5), P::plain("LFO 5 P9 X", 1.0), P::plain("LFO 5 P9 Y", 0.5),
+    P::plain("LFO 5 P10 X", 1.0), P::plain("LFO 5 P10 Y", 0.5), P::plain("LFO 5 P11 X", 1.0), P::plain("LFO 5 P11 Y", 0.5),
+    P::plain("LFO 5 Bend 0", 0.5), P::plain("LFO 5 Bend 1", 0.5), P::plain("LFO 5 Bend 2", 0.5), P::plain("LFO 5 Bend 3", 0.5),
+    P::plain("LFO 5 Bend 4", 0.5), P::plain("LFO 5 Bend 5", 0.5), P::plain("LFO 5 Bend 6", 0.5), P::plain("LFO 5 Bend 7", 0.5),
+    P::plain("LFO 5 Bend 8", 0.5), P::plain("LFO 5 Bend 9", 0.5), P::plain("LFO 5 Bend 10", 0.5),
+    // LFO 6 Curve (294..=329)
+    P::plain("LFO 6 Points", 0.2),
+    P::plain("LFO 6 P0 X", 0.0), P::plain("LFO 6 P0 Y", 0.5), P::plain("LFO 6 P1 X", 0.25), P::plain("LFO 6 P1 Y", 1.0),
+    P::plain("LFO 6 P2 X", 0.75), P::plain("LFO 6 P2 Y", 0.0), P::plain("LFO 6 P3 X", 1.0), P::plain("LFO 6 P3 Y", 0.5),
+    P::plain("LFO 6 P4 X", 1.0), P::plain("LFO 6 P4 Y", 0.5), P::plain("LFO 6 P5 X", 1.0), P::plain("LFO 6 P5 Y", 0.5),
+    P::plain("LFO 6 P6 X", 1.0), P::plain("LFO 6 P6 Y", 0.5), P::plain("LFO 6 P7 X", 1.0), P::plain("LFO 6 P7 Y", 0.5),
+    P::plain("LFO 6 P8 X", 1.0), P::plain("LFO 6 P8 Y", 0.5), P::plain("LFO 6 P9 X", 1.0), P::plain("LFO 6 P9 Y", 0.5),
+    P::plain("LFO 6 P10 X", 1.0), P::plain("LFO 6 P10 Y", 0.5), P::plain("LFO 6 P11 X", 1.0), P::plain("LFO 6 P11 Y", 0.5),
+    P::plain("LFO 6 Bend 0", 0.5), P::plain("LFO 6 Bend 1", 0.5), P::plain("LFO 6 Bend 2", 0.5), P::plain("LFO 6 Bend 3", 0.5),
+    P::plain("LFO 6 Bend 4", 0.5), P::plain("LFO 6 Bend 5", 0.5), P::plain("LFO 6 Bend 6", 0.5), P::plain("LFO 6 Bend 7", 0.5),
+    P::plain("LFO 6 Bend 8", 0.5), P::plain("LFO 6 Bend 9", 0.5), P::plain("LFO 6 Bend 10", 0.5),
+    // LFO 7 Curve (330..=365)
+    P::plain("LFO 7 Points", 0.2),
+    P::plain("LFO 7 P0 X", 0.0), P::plain("LFO 7 P0 Y", 0.5), P::plain("LFO 7 P1 X", 0.25), P::plain("LFO 7 P1 Y", 1.0),
+    P::plain("LFO 7 P2 X", 0.75), P::plain("LFO 7 P2 Y", 0.0), P::plain("LFO 7 P3 X", 1.0), P::plain("LFO 7 P3 Y", 0.5),
+    P::plain("LFO 7 P4 X", 1.0), P::plain("LFO 7 P4 Y", 0.5), P::plain("LFO 7 P5 X", 1.0), P::plain("LFO 7 P5 Y", 0.5),
+    P::plain("LFO 7 P6 X", 1.0), P::plain("LFO 7 P6 Y", 0.5), P::plain("LFO 7 P7 X", 1.0), P::plain("LFO 7 P7 Y", 0.5),
+    P::plain("LFO 7 P8 X", 1.0), P::plain("LFO 7 P8 Y", 0.5), P::plain("LFO 7 P9 X", 1.0), P::plain("LFO 7 P9 Y", 0.5),
+    P::plain("LFO 7 P10 X", 1.0), P::plain("LFO 7 P10 Y", 0.5), P::plain("LFO 7 P11 X", 1.0), P::plain("LFO 7 P11 Y", 0.5),
+    P::plain("LFO 7 Bend 0", 0.5), P::plain("LFO 7 Bend 1", 0.5), P::plain("LFO 7 Bend 2", 0.5), P::plain("LFO 7 Bend 3", 0.5),
+    P::plain("LFO 7 Bend 4", 0.5), P::plain("LFO 7 Bend 5", 0.5), P::plain("LFO 7 Bend 6", 0.5), P::plain("LFO 7 Bend 7", 0.5),
+    P::plain("LFO 7 Bend 8", 0.5), P::plain("LFO 7 Bend 9", 0.5), P::plain("LFO 7 Bend 10", 0.5),
+    // LFO 8 Curve (366..=401)
+    P::plain("LFO 8 Points", 0.2),
+    P::plain("LFO 8 P0 X", 0.0), P::plain("LFO 8 P0 Y", 0.5), P::plain("LFO 8 P1 X", 0.25), P::plain("LFO 8 P1 Y", 1.0),
+    P::plain("LFO 8 P2 X", 0.75), P::plain("LFO 8 P2 Y", 0.0), P::plain("LFO 8 P3 X", 1.0), P::plain("LFO 8 P3 Y", 0.5),
+    P::plain("LFO 8 P4 X", 1.0), P::plain("LFO 8 P4 Y", 0.5), P::plain("LFO 8 P5 X", 1.0), P::plain("LFO 8 P5 Y", 0.5),
+    P::plain("LFO 8 P6 X", 1.0), P::plain("LFO 8 P6 Y", 0.5), P::plain("LFO 8 P7 X", 1.0), P::plain("LFO 8 P7 Y", 0.5),
+    P::plain("LFO 8 P8 X", 1.0), P::plain("LFO 8 P8 Y", 0.5), P::plain("LFO 8 P9 X", 1.0), P::plain("LFO 8 P9 Y", 0.5),
+    P::plain("LFO 8 P10 X", 1.0), P::plain("LFO 8 P10 Y", 0.5), P::plain("LFO 8 P11 X", 1.0), P::plain("LFO 8 P11 Y", 0.5),
+    P::plain("LFO 8 Bend 0", 0.5), P::plain("LFO 8 Bend 1", 0.5), P::plain("LFO 8 Bend 2", 0.5), P::plain("LFO 8 Bend 3", 0.5),
+    P::plain("LFO 8 Bend 4", 0.5), P::plain("LFO 8 Bend 5", 0.5), P::plain("LFO 8 Bend 6", 0.5), P::plain("LFO 8 Bend 7", 0.5),
+    P::plain("LFO 8 Bend 8", 0.5), P::plain("LFO 8 Bend 9", 0.5), P::plain("LFO 8 Bend 10", 0.5),
+    // Matrix Slots 9..16 (402..=425)
+    P::menu("Slot 9 Src", 0.0, DS_MOD_SOURCES), P::menu("Slot 9 Dest", 0.0, DS_MOD_DESTS), P::cont("Slot 9 Depth", 0.5, AMOUNT_1),
+    P::menu("Slot 10 Src", 0.0, DS_MOD_SOURCES), P::menu("Slot 10 Dest", 0.0, DS_MOD_DESTS), P::cont("Slot 10 Depth", 0.5, AMOUNT_1),
+    P::menu("Slot 11 Src", 0.0, DS_MOD_SOURCES), P::menu("Slot 11 Dest", 0.0, DS_MOD_DESTS), P::cont("Slot 11 Depth", 0.5, AMOUNT_1),
+    P::menu("Slot 12 Src", 0.0, DS_MOD_SOURCES), P::menu("Slot 12 Dest", 0.0, DS_MOD_DESTS), P::cont("Slot 12 Depth", 0.5, AMOUNT_1),
+    P::menu("Slot 13 Src", 0.0, DS_MOD_SOURCES), P::menu("Slot 13 Dest", 0.0, DS_MOD_DESTS), P::cont("Slot 13 Depth", 0.5, AMOUNT_1),
+    P::menu("Slot 14 Src", 0.0, DS_MOD_SOURCES), P::menu("Slot 14 Dest", 0.0, DS_MOD_DESTS), P::cont("Slot 14 Depth", 0.5, AMOUNT_1),
+    P::menu("Slot 15 Src", 0.0, DS_MOD_SOURCES), P::menu("Slot 15 Dest", 0.0, DS_MOD_DESTS), P::cont("Slot 15 Depth", 0.5, AMOUNT_1),
+    P::menu("Slot 16 Src", 0.0, DS_MOD_SOURCES), P::menu("Slot 16 Dest", 0.0, DS_MOD_DESTS), P::cont("Slot 16 Depth", 0.5, AMOUNT_1),
+    // Macros 1..4 (426..=429)
+    P::plain("Macro 1", 0.0), // 426
+    P::plain("Macro 2", 0.0), // 427
+    P::plain("Macro 3", 0.0), // 428
+    P::plain("Macro 4", 0.0), // 429
 ];
 pub static MODULES: &[ModuleSpec] = &[
     ModuleSpec::instrument(
