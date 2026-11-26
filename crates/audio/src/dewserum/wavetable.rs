@@ -513,3 +513,66 @@ pub fn wave_preview(osc: usize, table_idx: usize, pos: f32, out: &mut [f32]) {
     }
         }
                     
+#[allow(clippy::too_many_arguments)]
+pub fn wave_preview_shaped(
+    osc: usize,
+    table_idx: usize,
+    pos: f32,
+    sync: f32,
+    warp_mode: super::WarpMode,
+    warp_amt: f32,
+    fm_amt: f32,
+    mod_table_idx: usize,
+    mod_pos: f32,
+    mod_sync: f32,
+    mod_warp_mode: super::WarpMode,
+    mod_warp_amt: f32,
+    out: &mut [f32],
+) {
+    let b = bank();
+    let n = out.len();
+    if n == 0 {
+        return;
+    }
+
+    let custom_a = custom_preview_slot(osc).read().ok().and_then(|g| g.clone());
+    let custom_b = custom_preview_slot(1).read().ok().and_then(|g| g.clone());
+
+    let reader_main = if table_idx == CUSTOM_MENU_INDEX && custom_a.is_some() {
+        b.reader_custom(custom_a.as_deref(), PREVIEW_LEVEL, pos)
+    } else {
+        b.reader(table_idx, PREVIEW_LEVEL, pos)
+    };
+
+    let reader_mod = if mod_table_idx == CUSTOM_MENU_INDEX && custom_b.is_some() {
+        b.reader_custom(custom_b.as_deref(), PREVIEW_LEVEL, mod_pos)
+    } else {
+        b.reader(mod_table_idx, PREVIEW_LEVEL, mod_pos)
+    };
+
+    let sync_ratio = 1.0 + 15.0 * sync.clamp(0.0, 1.0).powi(2);
+    let sync_mult = (sync_ratio * 65536.0) as u64;
+
+    let mod_sync_ratio = 1.0 + 15.0 * mod_sync.clamp(0.0, 1.0).powi(2);
+    let mod_sync_mult = (mod_sync_ratio * 65536.0) as u64;
+
+    let fm_depth = fm_amt.clamp(0.0, 1.0).powi(2) * 0.5;
+    let use_fm = osc == 0 && fm_depth > 1e-6;
+
+    for (k, y) in out.iter_mut().enumerate() {
+        let base_phase = (k as f64 / n as f64 * PHASE_SCALE) as u32;
+        let synced = ((u64::from(base_phase) * sync_mult) >> 16) as u32;
+        let warped = super::apply_warp(synced, warp_mode, warp_amt);
+        let final_phase = if use_fm {
+            let mod_synced = ((u64::from(base_phase) * mod_sync_mult) >> 16) as u32;
+            let mod_warped = super::apply_warp(mod_synced, mod_warp_mode, mod_warp_amt);
+            let mod_s = reader_mod.read(mod_warped);
+            let fm_off = ((mod_s * fm_depth) * 4_294_967_296.0) as i64 as u32;
+            warped.wrapping_add(fm_off)
+        } else {
+            warped
+        };
+        *y = reader_main.read(final_phase);
+    }
+    }
+        
