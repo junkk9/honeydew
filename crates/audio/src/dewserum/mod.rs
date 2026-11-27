@@ -278,8 +278,8 @@ pub mod param {
     pub const LFO_EXT_CURVE: usize = LFO_EXT_BASE + 4 * LFO_PARAMS; // 258..=401 (4 * 36)
     pub const MATRIX_EXT: usize = LFO_EXT_CURVE + 4 * CURVE_PARAMS; // 402..=425 (8 * 3)
     pub const MACRO_BASE: usize = MATRIX_EXT + 8 * SLOT_PARAMS; // 426..=429 (4)
-    pub const FX_BASE: usize = MACRO_BASE + 4; // 430..=541 (16 * 7)
-    pub const COUNT: usize = FX_BASE + 16 * 7; // 542
+        pub const FX_BASE: usize = MACRO_BASE + 4; // 430..=561 (12 * 11)
+    pub const COUNT: usize = FX_BASE + 12 * 11; // 562
 
     pub const fn env_at(index: usize) -> usize {
         ENV_BASE + index * ENV_PARAMS
@@ -314,7 +314,7 @@ pub mod param {
     }
     
     pub const fn fx_at(slot: usize) -> usize {
-        FX_BASE + slot * 7
+        FX_BASE + slot * 11
     }
 }
 
@@ -374,10 +374,10 @@ pub fn defaults() -> [f32; PARAM_COUNT] {
     for m in 0..MACRO_COUNT {
         p[macro_at(m)] = 0.0;
     }
-        for slot in 0..12 {
-    let at = fx_at(slot);
-    p[at..at + 11].copy_from_slice(&[0.0, 1.0, 0.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.25, 0.5]);
-}
+            for slot in 0..12 {
+        let at = fx_at(slot);
+        p[at..at + 11].copy_from_slice(&[0.0, 1.0, 0.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.25, 0.5]);
+    }
     p[MASTER] = 0.7;
     p[VOICES] = 1.0;
     let default_curve = CurvePreset::Triangle.curve().to_params();
