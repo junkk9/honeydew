@@ -922,8 +922,8 @@ impl FxSlotState {
                 self.delay.process(l, r, in_s.sub, in_s.p1, in_s.p2, in_s.p3, in_s.mix, tempo_bpm, sr)
             }
             FxKind::Reverb => self.reverb.process(l, r, in_s.p1, in_s.p2, in_s.p3, in_s.mix),
-            FxKind::Eq3 => self.eq3.process(l, r, in_s.sub, in_s.p1, in_s.p2, in_s.p3, in_s.mix, sr),
-            FxKind::CompOtt => self.comp.process(l, r, in_s.sub, in_s.p1, in_s.p2, in_s.p3, in_s.mix, sr),
+            FxKind::Eq3 => self.eq3.process(l, r, in_s.sub, in_s.p1, in_s.p2, in_s.p3, in_s.p4, in_s.p5, in_s.p6, in_s.p7, in_s.mix, sr),
+            FxKind::CompOtt => self.comp.process(l, r, in_s.sub, in_s.p1, in_s.p2, in_s.p3, in_s.p4, in_s.p5, in_s.p6, in_s.mix, sr),
             FxKind::Convolver => self.conv.process(l, r, in_s.sub, in_s.p1, in_s.p2, in_s.p3, in_s.mix, sr),
         }
     }
