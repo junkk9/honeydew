@@ -91,31 +91,28 @@ pub fn custom_picked(module: &ModuleInstance, changed: &[i32]) -> bool {
 pub fn panel() -> Option<Panel> {
     Some(Panel::new(vstack([
         tabs(100, TABS).h(Size::U(1.25)),
-                hstack([
-            spinner(10050, "OSC A Table").p(param::OSC_A_TABLE).items_per_column(5),
-            text(10051, "").font(FontSize::Pt10).align(Align2::LEFT_CENTER).ink(Ink::Channel),
+        hstack([
+            spinner(10050, "OSC A Table")
+                .p(param::OSC_A_TABLE)
+                .items_per_column(5),
+            text(10051, "")
+                .font(FontSize::Pt10)
+                .align(Align2::LEFT_CENTER)
+                .ink(Ink::Channel),
         ])
         .h(Size::U(1.55))
         .show(Show::Tab(0)),
         hstack([
-            spinner(20050, "OSC B Table").p(param::OSC_B_TABLE).items_per_column(5),
-            text(20051, "").font(FontSize::Pt10).align(Align2::LEFT_CENTER).ink(Ink::Channel),
-        ])
-        .h(Size::U(1.55))
-        .show(Show::Tab(1)),
-            text(10051, "")
-                .font(FontSize::Pt10)
-                .align(Align2::LEFT_CENTER)
-                .ink(Ink::Channel)
-                .show(Show::Tab(0)),
+            spinner(20050, "OSC B Table")
+                .p(param::OSC_B_TABLE)
+                .items_per_column(5),
             text(20051, "")
                 .font(FontSize::Pt10)
                 .align(Align2::LEFT_CENTER)
-                .ink(Ink::Channel)
-                .show(Show::Tab(1)),
+                .ink(Ink::Channel),
         ])
         .h(Size::U(1.55))
-        .show(Show::Any(&OSC_TABS)),
+        .show(Show::Tab(1)),
         osc_page(
             10000,
             param::OSC_BASE[0usize],
@@ -143,7 +140,7 @@ pub fn panel() -> Option<Panel> {
         matrix_page().show(Show::Tab(6)),
         fx_page().show(Show::Tab(7)),
         master_page().show(Show::Tab(8)),
-    ]))
+    ])))
 }
 
 fn osc_page(
