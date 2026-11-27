@@ -42,8 +42,6 @@ const T_WARP_A: usize = 137;
 const T_WARP_B: usize = 138;
 const T_ACTIVE: usize = 141;
 
-const OSC_TABS: [Show; 2] = [Show::Tab(0), Show::Tab(1)];
-
 pub fn wire(module: &mut ModuleInstance, state: &mut PanelState) {
     for osc in 0..2 {
         let name = crate::audio_engine::samples::dewserum_table_path(module, osc).and_then(|p| {
@@ -93,15 +91,18 @@ pub fn custom_picked(module: &ModuleInstance, changed: &[i32]) -> bool {
 pub fn panel() -> Option<Panel> {
     Some(Panel::new(vstack([
         tabs(100, TABS).h(Size::U(1.25)),
+                hstack([
+            spinner(10050, "OSC A Table").p(param::OSC_A_TABLE).items_per_column(5),
+            text(10051, "").font(FontSize::Pt10).align(Align2::LEFT_CENTER).ink(Ink::Channel),
+        ])
+        .h(Size::U(1.55))
+        .show(Show::Tab(0)),
         hstack([
-            spinner(10050, "OSC A Table")
-                .p(param::OSC_A_TABLE)
-                .items_per_column(5)
-                .show(Show::Tab(0)),
-            spinner(20050, "OSC B Table")
-                .p(param::OSC_B_TABLE)
-                .items_per_column(5)
-                .show(Show::Tab(1)),
+            spinner(20050, "OSC B Table").p(param::OSC_B_TABLE).items_per_column(5),
+            text(20051, "").font(FontSize::Pt10).align(Align2::LEFT_CENTER).ink(Ink::Channel),
+        ])
+        .h(Size::U(1.55))
+        .show(Show::Tab(1)),
             text(10051, "")
                 .font(FontSize::Pt10)
                 .align(Align2::LEFT_CENTER)
@@ -424,12 +425,13 @@ fn fx_page() -> Part {
             12 => "FX 13", 13 => "FX 14", 14 => "FX 15", _ => "FX 16",
         };
         let fns = FX_LABEL_FNS[slot];
-        let mode_spin = |id_off: u32, items: &'static [&'static str], kind_idx: usize| {
+              let mode_spin = |id_off: u32, items: &'static [&'static str], kind_idx: usize| {
             spinner(b + id_off, "Mode")
                 .p(at + FX_SUB)
                 .items(items)
-                .show(Show::Menu(at + FX_KIND, kind_idx))
+                .show(Show::Item(at + FX_KIND, kind_idx))
         };
+        
         hstack([
             display(b + 15)
                 .w(Size::U(1.1))
