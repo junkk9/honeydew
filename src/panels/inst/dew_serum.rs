@@ -22,12 +22,13 @@ use crate::ui::UiCtx;
 
 pub const TYPE_ID: u16 = 53;
 
-const TABS: &str = "OSC A · OSC B · SUB/NOISE · FILTER · ENV · LFO · MATRIX · MASTER";
+const TABS: &str = "OSC A · OSC B · SUB/NOISE · FILTER · ENV · LFO · MATRIX · FX · MASTER";
 const ENV_TABS: &str = "ENV 1 · ENV 2 · ENV 3 · ENV 4";
 const LFO_PAGE_TABS: &str = "LFO 1–4 · LFO 5–8";
 const LFO_TABS_A: &str = "LFO 1 · LFO 2 · LFO 3 · LFO 4";
 const LFO_TABS_B: &str = "LFO 5 · LFO 6 · LFO 7 · LFO 8";
 const MATRIX_TABS: &str = "Slots 1–4 · Slots 5–8 · Slots 9–12 · Slots 13–16";
+const FX_TABS: &str = "FX 1–4 · FX 5–8 · FX 9–12 · FX 13–16";
 
 const T_CUTOFF: usize = 128;
 const T_RES: usize = 129;
@@ -149,7 +150,8 @@ pub fn panel() -> Option<Panel> {
         env_page().show(Show::Tab(4)),
         lfo_page().show(Show::Tab(5)),
         matrix_page().show(Show::Tab(6)),
-        master_page().show(Show::Tab(7)),
+        fx_page().show(Show::Tab(7)),
+        master_page().show(Show::Tab(8)),
     ])))
 }
 
@@ -324,6 +326,115 @@ fn matrix_page() -> Part {
         vstack([slot_row(12), slot_row(13), slot_row(14), slot_row(15)])
             .show(Show::Setting(60100, 3)),
     ])
+}
+
+fn fx_page() -> Part {
+    let slot_row = |slot: usize| {
+        let at = param::fx_at(slot);
+        let b = 65000 + (slot as u32) * 20;
+        let label = match slot {
+            0 => "FX 1", 1 => "FX 2", 2 => "FX 3", 3 => "FX 4",
+            4 => "FX 5", 5 => "FX 6", 6 => "FX 7", 7 => "FX 8",
+            8 => "FX 9", 9 => "FX 10", 10 => "FX 11", 11 => "FX 12",
+            12 => "FX 13", 13 => "FX 14", 14 => "FX 15", _ => "FX 16",
+        };
+        hstack([
+            display(b + 15)
+                .w(Size::U(1.3))
+                .draw(match slot {
+                    0 => draw_fx_swap_0, 1 => draw_fx_swap_1, 2 => draw_fx_swap_2, 3 => draw_fx_swap_3,
+                    4 => draw_fx_swap_4, 5 => draw_fx_swap_5, 6 => draw_fx_swap_6, 7 => draw_fx_swap_7,
+                    8 => draw_fx_swap_8, 9 => draw_fx_swap_9, 10 => draw_fx_swap_10, 11 => draw_fx_swap_11,
+                    12 => draw_fx_swap_12, 13 => draw_fx_swap_13, 14 => draw_fx_swap_14, _ => draw_fx_swap_15,
+                }),
+            toggle(b + 1, "On").p(at + FX_ON),
+            spinner(b + 2, label).p(at + FX_KIND),
+            knob(b + 3, "Mode").p(at + FX_SUB),
+            knob(b + 4, "P1").p(at + FX_P1),
+            knob(b + 5, "P2").p(at + FX_P2),
+            knob(b + 6, "P3").p(at + FX_P3),
+            knob(b + 7, "Mix").p(at + FX_MIX),
+        ])
+    };
+
+    vstack([
+        list(64100, FX_TABS, Bar::Bottom).h(Size::U(1.15)),
+        vstack([slot_row(0), slot_row(1), slot_row(2), slot_row(3)])
+            .show(Show::Setting(64100, 0)),
+        vstack([slot_row(4), slot_row(5), slot_row(6), slot_row(7)])
+            .show(Show::Setting(64100, 1)),
+        vstack([slot_row(8), slot_row(9), slot_row(10), slot_row(11)])
+            .show(Show::Setting(64100, 2)),
+        vstack([slot_row(12), slot_row(13), slot_row(14), slot_row(15)])
+            .show(Show::Setting(64100, 3)),
+    ])
+}
+
+fn draw_fx_swap_0(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 0, ink) }
+fn draw_fx_swap_1(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 1, ink) }
+fn draw_fx_swap_2(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 2, ink) }
+fn draw_fx_swap_3(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 3, ink) }
+fn draw_fx_swap_4(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 4, ink) }
+fn draw_fx_swap_5(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 5, ink) }
+fn draw_fx_swap_6(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 6, ink) }
+fn draw_fx_swap_7(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 7, ink) }
+fn draw_fx_swap_8(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 8, ink) }
+fn draw_fx_swap_9(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 9, ink) }
+fn draw_fx_swap_10(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 10, ink) }
+fn draw_fx_swap_11(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 11, ink) }
+fn draw_fx_swap_12(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 12, ink) }
+fn draw_fx_swap_13(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 13, ink) }
+fn draw_fx_swap_14(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 14, ink) }
+fn draw_fx_swap_15(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 15, ink) }
+
+fn draw_fx_swap(
+    ui: &mut Ui,
+    cx: &UiCtx,
+    r: Rect,
+    module: &mut ModuleInstance,
+    slot: usize,
+    ink: Color32,
+) -> Vec<usize> {
+    let colors = &cx.theme.colors;
+    let px = 1.0 / cx.m.ppp();
+    let painter = ui.painter();
+    let half_h = r.height() * 0.5;
+    let up_r = Rect::from_min_max(r.min, pos2(r.max.x, r.min.y + half_h)).shrink(1.5 * px);
+    let dn_r = Rect::from_min_max(pos2(r.min.x, r.min.y + half_h), r.max).shrink(1.5 * px);
+
+    let fill = colors.control_fill.to_color32();
+    let font = cx.m.font_id(FontSize::Pt8);
+    let mut changed = Vec::new();
+
+    if slot > 0 {
+        painter.rect_filled(up_r, 3.0 * px, fill);
+        painter.text(up_r.center(), Align2::CENTER_CENTER, "▲", font.clone(), ink);
+        let resp = ui.interact(up_r, ui.id().with(("ds_fx_up", slot)), Sense::click());
+        if resp.clicked() {
+            let a = param::fx_at(slot);
+            let b = param::fx_at(slot - 1);
+            for k in 0..7 {
+                module.params.swap(a + k, b + k);
+                changed.push(a + k);
+                changed.push(b + k);
+            }
+        }
+    }
+    if slot < 15 {
+        painter.rect_filled(dn_r, 3.0 * px, fill);
+        painter.text(dn_r.center(), Align2::CENTER_CENTER, "▼", font, ink);
+        let resp = ui.interact(dn_r, ui.id().with(("ds_fx_dn", slot)), Sense::click());
+        if resp.clicked() {
+            let a = param::fx_at(slot);
+            let b = param::fx_at(slot + 1);
+            for k in 0..7 {
+                module.params.swap(a + k, b + k);
+                changed.push(a + k);
+                changed.push(b + k);
+            }
+        }
+    }
+    changed
 }
 
 fn master_page() -> Part {
