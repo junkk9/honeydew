@@ -869,12 +869,12 @@ impl Slot {
 pub const SLOTS: usize = 16;
 pub const SLOT_PARAMS: usize = 3;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ModValues([f32; DEST_COUNT]);
 
-impl ModValues {
-    pub fn get(&self, dest: ModDest) -> f32 {
-        self.0[dest as usize]
+impl Default for ModValues {
+    fn default() -> Self {
+        Self([0.0; DEST_COUNT])
     }
 }
 
