@@ -31,7 +31,7 @@ const LFO_PAGE_TABS: &str = "LFO 1–4 · LFO 5–8";
 const LFO_TABS_A: &str = "LFO 1 · LFO 2 · LFO 3 · LFO 4";
 const LFO_TABS_B: &str = "LFO 5 · LFO 6 · LFO 7 · LFO 8";
 const MATRIX_TABS: &str = "Slots 1–4 · Slots 5–8 · Slots 9–12 · Slots 13–16";
-const FX_TABS: &str = "FX 1–4 · FX 5–8 · FX 9–12";
+const FX_TABS: &str = "FX 1–2 · FX 3–4 · FX 5–6 · FX 7–8 · FX 9–10 · FX 11–12";
 
 const T_CUTOFF: usize = 128;
 const T_RES: usize = 129;
@@ -405,6 +405,50 @@ const FX_LABEL_FNS: [[fn(&[f32]) -> String; 8]; 12] = [
     [fx11_l0, fx11_l1, fx11_l2, fx11_l3, fx11_l4, fx11_l5, fx11_l6, fx11_l7],
 ];
 
+fn fx_mode_text(params: &[f32], slot: usize) -> String {
+    let at = param::fx_at(slot);
+    let kind = FxKind::from_param(params.get(at + FX_KIND).copied().unwrap_or(0.0));
+    let sub = params.get(at + FX_SUB).copied().unwrap_or(0.0);
+    let list: &[&str] = match kind {
+        FxKind::Distortion => &["Tube", "Hard", "Fold", "Crush"],
+        FxKind::Filter => &["LP 12", "LP 24", "HP 12", "HP 24", "BP 12", "Notch", "Comb"],
+        FxKind::ChorusFlanger => &["Chorus", "Flanger"],
+        FxKind::Delay => &["Stereo", "Ping-Pong"],
+        FxKind::Eq3 => &[
+            "LowSh+Pk+HiSh",
+            "HP+Pk+LP",
+            "HP+Pk+HiSh",
+            "LowSh+Pk+LP",
+            "3x Peak",
+            "LowSh+2xPk",
+            "2xPk+LP",
+            "2xPk+HiSh",
+            "HP+2xPk",
+        ],
+        FxKind::CompOtt => &["Comp", "OTT"],
+        FxKind::Convolver => &["Room", "Hall", "Metal", "Cab", "Spring"],
+        _ => &["—"],
+    };
+    list[choice(sub, list.len())].to_owned()
+}
+
+macro_rules! fx_mode_fns {
+    ($($slot:expr => $fn_name:ident),* $(,)?) => {
+        $(fn $fn_name(p: &[f32]) -> String { fx_mode_text(p, $slot) })*
+    };
+}
+
+fx_mode_fns!(
+    0 => fx0_mode, 1 => fx1_mode, 2 => fx2_mode, 3 => fx3_mode,
+    4 => fx4_mode, 5 => fx5_mode, 6 => fx6_mode, 7 => fx7_mode,
+    8 => fx8_mode, 9 => fx9_mode, 10 => fx10_mode, 11 => fx11_mode,
+);
+
+const FX_MODE_FNS: [fn(&[f32]) -> String; 12] = [
+    fx0_mode, fx1_mode, fx2_mode, fx3_mode, fx4_mode, fx5_mode,
+    fx6_mode, fx7_mode, fx8_mode, fx9_mode, fx10_mode, fx11_mode,
+];
+
 fn fx_page() -> Part {
     let slot_box = |slot: usize| {
         let at = param::fx_at(slot);
@@ -415,13 +459,6 @@ fn fx_page() -> Part {
             8 => "FX 9", 9 => "FX 10", 10 => "FX 11", _ => "FX 12",
         };
         let fns = FX_LABEL_FNS[slot];
-                let mode_spin = |id_off: u32, items: &'static [&'static str], kind_idx: usize| {
-            spinner(b + id_off, "Mode")
-                .p(at + FX_SUB)
-                .items(items)
-                .w(Size::U(2.8))
-                .show(Show::Item(at + FX_KIND, kind_idx))
-        };
         let swap_fn: Draw = match slot {
             0 => draw_fx_swap_0, 1 => draw_fx_swap_1, 2 => draw_fx_swap_2, 3 => draw_fx_swap_3,
             4 => draw_fx_swap_4, 5 => draw_fx_swap_5, 6 => draw_fx_swap_6, 7 => draw_fx_swap_7,
@@ -433,77 +470,57 @@ fn fx_page() -> Part {
             8 => draw_fx_frame_8, 9 => draw_fx_frame_9, 10 => draw_fx_frame_10, _ => draw_fx_frame_11,
         };
 
-                let top_row = hstack([
-            display(b + 15).w(Size::U(0.95)).draw(swap_fn),
-            toggle(b + 1, "On").p(at + FX_ON).w(Size::U(1.1)),
-            spinner(b + 2, label).p(at + FX_KIND).items_per_column(5).w(Size::U(2.6)),
-            mode_spin(20, &["Tube", "Hard", "Fold", "Crush"], 2),
-            mode_spin(21, &["LP 12", "LP 24", "HP 12", "HP 24", "BP 12", "Notch", "Comb"], 3),
-            mode_spin(22, &["Chorus", "Flanger"], 4),
-            mode_spin(23, &["Stereo", "Ping-Pong"], 5),
-            mode_spin(
-                24,
-                &[
-                    "LowSh+Pk+HiSh",
-                    "HP+Pk+LP",
-                    "HP+Pk+HiSh",
-                    "LowSh+Pk+LP",
-                    "3x Peak",
-                    "LowSh+2xPk",
-                    "2xPk+LP",
-                    "2xPk+HiSh",
-                    "HP+2xPk",
-                ],
-                7,
-            ),
-            mode_spin(25, &["Comp", "OTT"], 8),
-            mode_spin(26, &["Room", "Hall", "Metal", "Cab", "Spring"], 9),
+        let top_row = hstack([
+            display(b + 15).w(Size::U(1.1)).draw(swap_fn),
+            toggle(b + 1, "On").p(at + FX_ON).w(Size::U(1.15)),
+            spinner(b + 2, label).p(at + FX_KIND).items_per_column(5).w(Size::U(2.8)),
+            spinner(b + 20, "—").p(at + FX_SUB).label_fn(FX_MODE_FNS[slot]).w(Size::U(2.9)),
             knob(b + 4, "—").p(at + FX_P1).label_fn(fns[0usize]),
             knob(b + 5, "—").p(at + FX_P2).label_fn(fns[1usize]),
             knob(b + 6, "—").p(at + FX_P3).label_fn(fns[2usize]),
             knob(b + 7, "—").p(at + FX_MIX).label_fn(fns[7usize]),
         ])
-        .h(Size::U(1.35));
+        .h(Size::U(1.75));
 
         let eq_bottom = hstack([
-            spacer(b + 16).w(Size::U(4.65)),
+            spacer(b + 16).w(Size::U(7.95)),
             knob(b + 8, "Gain 1").p(at + FX_P4).label_fn(fns[3usize]),
             knob(b + 9, "Gain 2").p(at + FX_P5).label_fn(fns[4usize]),
             knob(b + 10, "Gain 3").p(at + FX_P6).label_fn(fns[5usize]),
             knob(b + 11, "Res").p(at + FX_P7).label_fn(fns[6usize]),
         ])
-        .h(Size::U(1.35))
+        .h(Size::U(1.75))
         .show(Show::Item(at + FX_KIND, 7));
 
         let ott_bottom = hstack([
-            spacer(b + 17).w(Size::U(4.65)),
+            spacer(b + 17).w(Size::U(7.95)),
             knob(b + 12, "Low").p(at + FX_P4).label_fn(fns[3usize]),
             knob(b + 13, "Mid").p(at + FX_P5).label_fn(fns[4usize]),
             knob(b + 14, "High").p(at + FX_P6).label_fn(fns[5usize]),
             spacer(b + 19),
         ])
-        .h(Size::U(1.35))
+        .h(Size::U(1.75))
         .show(Show::Item(at + FX_KIND, 8));
 
         layer([
             display(b + 18).draw(frame_fn),
-            vstack([top_row, eq_bottom, ott_bottom]).margins(0.08, 0.12, 0.08, 0.12),
+            vstack([top_row, eq_bottom, ott_bottom]).margins(0.12, 0.16, 0.12, 0.16),
         ])
-        .margins(0.06, 0.08, 0.06, 0.08)
+        .margins(0.08, 0.12, 0.08, 0.12)
     };
 
     vstack([
-        list(64100, FX_TABS, Bar::Bottom).h(Size::U(1.05)),
+        list(64100, FX_TABS, Bar::Bottom).h(Size::U(1.1)),
         display(64200)
-            .margins(0.12, 0.18, 0.12, 0.18)
-            .h(Size::U(2.15))
+            .margins(0.14, 0.2, 0.14, 0.2)
+            .h(Size::U(2.4))
             .draw(draw_fx_graph),
-        vstack([slot_box(0), slot_box(1), slot_box(2), slot_box(3)])
-            .show(Show::Setting(64100, 0)),
-        vstack([slot_box(4), slot_box(5), slot_box(6), slot_box(7)])
-            .show(Show::Setting(64100, 1)),
-        vstack([slot_box(8), slot_box(9), slot_box(10), slot_box(11)])
-            .show(Show::Setting(64100, 2)),
+        vstack([slot_box(0), slot_box(1)]).show(Show::Setting(64100, 0)),
+        vstack([slot_box(2), slot_box(3)]).show(Show::Setting(64100, 1)),
+        vstack([slot_box(4), slot_box(5)]).show(Show::Setting(64100, 2)),
+        vstack([slot_box(6), slot_box(7)]).show(Show::Setting(64100, 3)),
+        vstack([slot_box(8), slot_box(9)]).show(Show::Setting(64100, 4)),
+        vstack([slot_box(10), slot_box(11)]).show(Show::Setting(64100, 5)),
     ])
 }
 
@@ -1233,10 +1250,10 @@ fn draw_fx_graph(
     }
 
     let page = state.settings.get(&64100).copied().unwrap_or(0.0).round() as usize;
-    let start_slot = (page.min(2)) * 4;
+    let start_slot = (page.min(5)) * 2;
 
     let mut target: Option<(usize, FxKind)> = None;
-    for s in start_slot..start_slot + 4 {
+    for s in start_slot..start_slot + 2 {
         let at = param::fx_at(s);
         let on = module.params.get(at + FX_ON).copied().unwrap_or(1.0) >= 0.5;
         let kind = FxKind::from_param(module.params.get(at + FX_KIND).copied().unwrap_or(0.0));
