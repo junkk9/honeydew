@@ -16,8 +16,8 @@ use modulation::{
     ModInputs, ModMatrix, SLOT_PARAMS, choice,
 };
 use fx::{
-    FX_KIND, FX_MIX, FX_ON, FX_P1, FX_P2, FX_P3, FX_SLOT_PARAMS, FX_SLOTS, FX_SUB, FxKind,
-    FxRack, SlotInputs,
+    FX_KIND, FX_MIX, FX_ON, FX_P1, FX_P2, FX_P3, FX_P4, FX_P5, FX_P6, FX_P7, FX_SLOT_PARAMS,
+    FX_SLOTS, FX_SUB, FxKind, FxRack, SlotInputs,
 };
 use wavetable::{
     CUSTOM_MENU_INDEX, CustomTable, Reader, TABLE_MENU_COUNT, WavetableBank, bank,
@@ -374,10 +374,10 @@ pub fn defaults() -> [f32; PARAM_COUNT] {
     for m in 0..MACRO_COUNT {
         p[macro_at(m)] = 0.0;
     }
-        for slot in 0..16 {
-        let at = fx_at(slot);
-        p[at..at + 7].copy_from_slice(&[0.0, 1.0, 0.0, 0.5, 0.5, 0.5, 0.5]);
-        }
+        for slot in 0..12 {
+    let at = fx_at(slot);
+    p[at..at + 11].copy_from_slice(&[0.0, 1.0, 0.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.25, 0.5]);
+}
     p[MASTER] = 0.7;
     p[VOICES] = 1.0;
     let default_curve = CurvePreset::Triangle.curve().to_params();
@@ -543,17 +543,21 @@ impl Control {
         });
                 let macros = std::array::from_fn(|m| p[param::macro_at(m)].clamp(0.0, 1.0));
         let fx_slots = std::array::from_fn(|s| {
-            let at = param::fx_at(s);
-            SlotInputs {
-                kind: FxKind::from_param(p[at + FX_KIND]),
-                active: p[at + FX_ON] >= 0.5,
-                sub: p[at + FX_SUB].clamp(0.0, 1.0),
-                p1: p[at + FX_P1].clamp(0.0, 1.0),
-                p2: p[at + FX_P2].clamp(0.0, 1.0),
-                p3: p[at + FX_P3].clamp(0.0, 1.0),
-                mix: p[at + FX_MIX].clamp(0.0, 1.0),
-            }
-        });
+    let at = param::fx_at(s);
+    SlotInputs {
+        kind: FxKind::from_param(p[at + FX_KIND]),
+        active: p[at + FX_ON] >= 0.5,
+        sub: p[at + FX_SUB].clamp(0.0, 1.0),
+        p1: p[at + FX_P1].clamp(0.0, 1.0),
+        p2: p[at + FX_P2].clamp(0.0, 1.0),
+        p3: p[at + FX_P3].clamp(0.0, 1.0),
+        p4: p[at + FX_P4].clamp(0.0, 1.0),
+        p5: p[at + FX_P5].clamp(0.0, 1.0),
+        p6: p[at + FX_P6].clamp(0.0, 1.0),
+        p7: p[at + FX_P7].clamp(0.0, 1.0),
+        mix: p[at + FX_MIX].clamp(0.0, 1.0),
+    }
+});
             Self {
             osc,
             fm_from_b: p[param::OSC_A_FM].clamp(0.0, 1.0),
@@ -1325,9 +1329,13 @@ impl DewSerum {
                 continue;
             }
             slot.p1 = (slot.p1 + fx_m.get(ModDest::fx_param(s, 0))).clamp(0.0, 1.0);
-            slot.p2 = (slot.p2 + fx_m.get(ModDest::fx_param(s, 1))).clamp(0.0, 1.0);
-            slot.p3 = (slot.p3 + fx_m.get(ModDest::fx_param(s, 2))).clamp(0.0, 1.0);
-            slot.mix = (slot.mix + fx_m.get(ModDest::fx_param(s, 3))).clamp(0.0, 1.0);
+slot.p2 = (slot.p2 + fx_m.get(ModDest::fx_param(s, 1))).clamp(0.0, 1.0);
+slot.p3 = (slot.p3 + fx_m.get(ModDest::fx_param(s, 2))).clamp(0.0, 1.0);
+slot.p4 = (slot.p4 + fx_m.get(ModDest::fx_param(s, 3))).clamp(0.0, 1.0);
+slot.p5 = (slot.p5 + fx_m.get(ModDest::fx_param(s, 4))).clamp(0.0, 1.0);
+slot.p6 = (slot.p6 + fx_m.get(ModDest::fx_param(s, 5))).clamp(0.0, 1.0);
+slot.p7 = (slot.p7 + fx_m.get(ModDest::fx_param(s, 6))).clamp(0.0, 1.0);
+slot.mix = (slot.mix + fx_m.get(ModDest::fx_param(s, 7))).clamp(0.0, 1.0);
         }
         self.fx_mod_inputs = fx_now;
     }
