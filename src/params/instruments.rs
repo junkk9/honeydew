@@ -1117,7 +1117,23 @@ const DS_MOD_DESTS: &[&str] = &[
     "LFO 5 Rate",
     "LFO 6 Rate",
     "LFO 7 Rate",
-    "LFO 8 Rate",
+        "LFO 8 Rate",
+    "FX 1 P1", "FX 1 P2", "FX 1 P3", "FX 1 Mix",
+    "FX 2 P1", "FX 2 P2", "FX 2 P3", "FX 2 Mix",
+    "FX 3 P1", "FX 3 P2", "FX 3 P3", "FX 3 Mix",
+    "FX 4 P1", "FX 4 P2", "FX 4 P3", "FX 4 Mix",
+    "FX 5 P1", "FX 5 P2", "FX 5 P3", "FX 5 Mix",
+    "FX 6 P1", "FX 6 P2", "FX 6 P3", "FX 6 Mix",
+    "FX 7 P1", "FX 7 P2", "FX 7 P3", "FX 7 Mix",
+    "FX 8 P1", "FX 8 P2", "FX 8 P3", "FX 8 Mix",
+    "FX 9 P1", "FX 9 P2", "FX 9 P3", "FX 9 Mix",
+    "FX 10 P1", "FX 10 P2", "FX 10 P3", "FX 10 Mix",
+    "FX 11 P1", "FX 11 P2", "FX 11 P3", "FX 11 Mix",
+    "FX 12 P1", "FX 12 P2", "FX 12 P3", "FX 12 Mix",
+    "FX 13 P1", "FX 13 P2", "FX 13 P3", "FX 13 Mix",
+    "FX 14 P1", "FX 14 P2", "FX 14 P3", "FX 14 Mix",
+    "FX 15 P1", "FX 15 P2", "FX 15 P3", "FX 15 Mix",
+    "FX 16 P1", "FX 16 P2", "FX 16 P3", "FX 16 Mix",
 ];
 const DS_LFO_BEATS: &[&str] = &[
     "1/8", "1/4", "1/2", "3/4", "1/1", "2/1", "4/1", "8/1", "16/1", "32/1",
@@ -1350,6 +1366,24 @@ const DEWSERUM: &[P] = &[
     P::plain("Macro 2", 0.0), // 427
     P::plain("Macro 3", 0.0), // 428
     P::plain("Macro 4", 0.0), // 429
+        // FX Rack Slots 1..16 (430..=541)
+    P::menu("FX 1 Type", 0.0, &["Empty", "Hyper/Dim", "Distortion", "Filter", "Chorus/Flng", "Delay", "Reverb"]), P::toggle("FX 1 On", 1.0), P::plain("FX 1 Mode", 0.0), P::plain("FX 1 P1", 0.5), P::plain("FX 1 P2", 0.5), P::plain("FX 1 P3", 0.5), P::plain("FX 1 Mix", 0.5),
+    P::menu("FX 2 Type", 0.0, &["Empty", "Hyper/Dim", "Distortion", "Filter", "Chorus/Flng", "Delay", "Reverb"]), P::toggle("FX 2 On", 1.0), P::plain("FX 2 Mode", 0.0), P::plain("FX 2 P1", 0.5), P::plain("FX 2 P2", 0.5), P::plain("FX 2 P3", 0.5), P::plain("FX 2 Mix", 0.5),
+    P::menu("FX 3 Type", 0.0, &["Empty", "Hyper/Dim", "Distortion", "Filter", "Chorus/Flng", "Delay", "Reverb"]), P::toggle("FX 3 On", 1.0), P::plain("FX 3 Mode", 0.0), P::plain("FX 3 P1", 0.5), P::plain("FX 3 P2", 0.5), P::plain("FX 3 P3", 0.5), P::plain("FX 3 Mix", 0.5),
+    P::menu("FX 4 Type", 0.0, &["Empty", "Hyper/Dim", "Distortion", "Filter", "Chorus/Flng", "Delay", "Reverb"]), P::toggle("FX 4 On", 1.0), P::plain("FX 4 Mode", 0.0), P::plain("FX 4 P1", 0.5), P::plain("FX 4 P2", 0.5), P::plain("FX 4 P3", 0.5), P::plain("FX 4 Mix", 0.5),
+    P::menu("FX 5 Type", 0.0, &["Empty", "Hyper/Dim", "Distortion", "Filter", "Chorus/Flng", "Delay", "Reverb"]), P::toggle("FX 5 On", 1.0), P::plain("FX 5 Mode", 0.0), P::plain("FX 5 P1", 0.5), P::plain("FX 5 P2", 0.5), P::plain("FX 5 P3", 0.5), P::plain("FX 5 Mix", 0.5),
+    P::menu("FX 6 Type", 0.0, &["Empty", "Hyper/Dim", "Distortion", "Filter", "Chorus/Flng", "Delay", "Reverb"]), P::toggle("FX 6 On", 1.0), P::plain("FX 6 Mode", 0.0), P::plain("FX 6 P1", 0.5), P::plain("FX 6 P2", 0.5), P::plain("FX 6 P3", 0.5), P::plain("FX 6 Mix", 0.5),
+    P::menu("FX 7 Type", 0.0, &["Empty", "Hyper/Dim", "Distortion", "Filter", "Chorus/Flng", "Delay", "Reverb"]), P::toggle("FX 7 On", 1.0), P::plain("FX 7 Mode", 0.0), P::plain("FX 7 P1", 0.5), P::plain("FX 7 P2", 0.5), P::plain("FX 7 P3", 0.5), P::plain("FX 7 Mix", 0.5),
+    P::menu("FX 8 Type", 0.0, &["Empty", "Hyper/Dim", "Distortion", "Filter", "Chorus/Flng", "Delay", "Reverb"]), P::toggle("FX 8 On", 1.0), P::plain("FX 8 Mode", 0.0), P::plain("FX 8 P1", 0.5), P::plain("FX 8 P2", 0.5), P::plain("FX 8 P3", 0.5), P::plain("FX 8 Mix", 0.5),
+    P::menu("FX 9 Type", 0.0, &["Empty", "Hyper/Dim", "Distortion", "Filter", "Chorus/Flng", "Delay", "Reverb"]), P::toggle("FX 9 On", 1.0), P::plain("FX 9 Mode", 0.0), P::plain("FX 9 P1", 0.5), P::plain("FX 9 P2", 0.5), P::plain("FX 9 P3", 0.5), P::plain("FX 9 Mix", 0.5),
+    P::menu("FX 10 Type", 0.0, &["Empty", "Hyper/Dim", "Distortion", "Filter", "Chorus/Flng", "Delay", "Reverb"]), P::toggle("FX 10 On", 1.0), P::plain("FX 10 Mode", 0.0), P::plain("FX 10 P1", 0.5), P::plain("FX 10 P2", 0.5), P::plain("FX 10 P3", 0.5), P::plain("FX 10 Mix", 0.5),
+    P::menu("FX 11 Type", 0.0, &["Empty", "Hyper/Dim", "Distortion", "Filter", "Chorus/Flng", "Delay", "Reverb"]), P::toggle("FX 11 On", 1.0), P::plain("FX 11 Mode", 0.0), P::plain("FX 11 P1", 0.5), P::plain("FX 11 P2", 0.5), P::plain("FX 11 P3", 0.5), P::plain("FX 11 Mix", 0.5),
+    P::menu("FX 12 Type", 0.0, &["Empty", "Hyper/Dim", "Distortion", "Filter", "Chorus/Flng", "Delay", "Reverb"]), P::toggle("FX 12 On", 1.0), P::plain("FX 12 Mode", 0.0), P::plain("FX 12 P1", 0.5), P::plain("FX 12 P2", 0.5), P::plain("FX 12 P3", 0.5), P::plain("FX 12 Mix", 0.5),
+    P::menu("FX 13 Type", 0.0, &["Empty", "Hyper/Dim", "Distortion", "Filter", "Chorus/Flng", "Delay", "Reverb"]), P::toggle("FX 13 On", 1.0), P::plain("FX 13 Mode", 0.0), P::plain("FX 13 P1", 0.5), P::plain("FX 13 P2", 0.5), P::plain("FX 13 P3", 0.5), P::plain("FX 13 Mix", 0.5),
+    P::menu("FX 14 Type", 0.0, &["Empty", "Hyper/Dim", "Distortion", "Filter", "Chorus/Flng", "Delay", "Reverb"]), P::toggle("FX 14 On", 1.0), P::plain("FX 14 Mode", 0.0), P::plain("FX 14 P1", 0.5), P::plain("FX 14 P2", 0.5), P::plain("FX 14 P3", 0.5), P::plain("FX 14 Mix", 0.5),
+    P::menu("FX 15 Type", 0.0, &["Empty", "Hyper/Dim", "Distortion", "Filter", "Chorus/Flng", "Delay", "Reverb"]), P::toggle("FX 15 On", 1.0), P::plain("FX 15 Mode", 0.0), P::plain("FX 15 P1", 0.5), P::plain("FX 15 P2", 0.5), P::plain("FX 15 P3", 0.5), P::plain("FX 15 Mix", 0.5),
+    P::menu("FX 16 Type", 0.0, &["Empty", "Hyper/Dim", "Distortion", "Filter", "Chorus/Flng", "Delay", "Reverb"]), P::toggle("FX 16 On", 1.0), P::plain("FX 16 Mode", 0.0), P::plain("FX 16 P1", 0.5), P::plain("FX 16 P2", 0.5), P::plain("FX 16 P3", 0.5), P::plain("FX 16 Mix", 0.5),
+
 ];
 pub static MODULES: &[ModuleSpec] = &[
     ModuleSpec::instrument(
@@ -1407,6 +1441,6 @@ pub static MODULES: &[ModuleSpec] = &[
         "DewSerum",
         "DewSerum",
         DEWSERUM,
-        &["OSC A", "OSC B", "SUB/NOISE", "FILTER", "ENV", "LFO", "MATRIX", "MASTER"],
-    ),
+        &["OSC A", "OSC B", "SUB/NOISE", "FILTER", "ENV", "LFO", "MATRIX", "FX", "MASTER"],
+),
 ];
