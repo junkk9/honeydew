@@ -4,7 +4,9 @@ use std::f32::consts::PI;
 use std::path::Path;
 
 use eframe::egui::{Align2, Color32, Id, Pos2, Rect, Sense, Shape, Stroke, Ui, pos2, vec2};
-use honeydew_audio::dewserum::fx::{FX_KIND, FX_MIX, FX_ON, FX_P1, FX_P2, FX_P3, FX_SUB, FxKind};
+use honeydew_audio::dewserum::fx::{
+    FX_KIND, FX_MIX, FX_ON, FX_P1, FX_P2, FX_P3, FX_P4, FX_P5, FX_P6, FX_P7, FX_SUB, FxKind,
+};
 use honeydew_audio::dewserum::modulation::{
     CURVE_PARAMS, CurvePreset, LfoCurve, MAX_POINTS, choice,
 };
@@ -29,7 +31,7 @@ const LFO_PAGE_TABS: &str = "LFO 1–4 · LFO 5–8";
 const LFO_TABS_A: &str = "LFO 1 · LFO 2 · LFO 3 · LFO 4";
 const LFO_TABS_B: &str = "LFO 5 · LFO 6 · LFO 7 · LFO 8";
 const MATRIX_TABS: &str = "Slots 1–4 · Slots 5–8 · Slots 9–12 · Slots 13–16";
-const FX_TABS: &str = "FX 1–4 · FX 5–8 · FX 9–12 · FX 13–16";
+const FX_TABS: &str = "FX 1–4 · FX 5–8 · FX 9–12";
 
 const T_CUTOFF: usize = 128;
 const T_RES: usize = 129;
@@ -322,152 +324,183 @@ fn fx_knob_label(params: &[f32], slot: usize, knob: usize) -> String {
     let sub = params.get(at + FX_SUB).copied().unwrap_or(0.0);
     let name = match (kind, knob) {
         (FxKind::Empty, _) => "—",
-        (_, 3) => "Mix",
+        (_, 7) => "Mix",
         (FxKind::HyperDim, 0) => "Rate",
         (FxKind::HyperDim, 1) => "Detune",
-        (FxKind::HyperDim, _) => "Size",
+        (FxKind::HyperDim, 2) => "Size",
         (FxKind::Distortion, 0) => "Drive",
         (FxKind::Distortion, 1) => "Tone",
-        (FxKind::Distortion, _) => "Post",
+        (FxKind::Distortion, 2) => "Post",
         (FxKind::Filter, 0) => "Cutoff",
         (FxKind::Filter, 1) => "Res",
-        (FxKind::Filter, _) => "Drive",
+        (FxKind::Filter, 2) => "Drive",
         (FxKind::ChorusFlanger, 0) => "Rate",
         (FxKind::ChorusFlanger, 1) => "Depth",
-        (FxKind::ChorusFlanger, _) => "Fdbk",
+        (FxKind::ChorusFlanger, 2) => "Fdbk",
         (FxKind::Delay, 0) => "Time",
         (FxKind::Delay, 1) => "Fdbk",
-        (FxKind::Delay, _) => "Tone",
+        (FxKind::Delay, 2) => "Tone",
         (FxKind::Reverb, 0) => "Size",
         (FxKind::Reverb, 1) => "Decay",
-        (FxKind::Reverb, _) => "Damp",
-        (FxKind::Eq3, 0) => "Low",
-        (FxKind::Eq3, 1) => "Mid",
-        (FxKind::Eq3, _) => "High",
-        (FxKind::CompOtt, 0) => {
-            if choice(sub, 2) == 1 {
-                "Depth"
-            } else {
-                "Thresh"
-            }
-        }
-        (FxKind::CompOtt, 1) => {
-            if choice(sub, 2) == 1 {
-                "Time"
-            } else {
-                "Ratio"
-            }
-        }
-        (FxKind::CompOtt, _) => "Gain",
+        (FxKind::Reverb, 2) => "Damp",
+        (FxKind::Eq3, 0) => "Freq 1",
+        (FxKind::Eq3, 1) => "Freq 2",
+        (FxKind::Eq3, 2) => "Freq 3",
+        (FxKind::Eq3, 3) => "Gain 1",
+        (FxKind::Eq3, 4) => "Gain 2",
+        (FxKind::Eq3, 5) => "Gain 3",
+        (FxKind::Eq3, 6) => "Res",
+        (FxKind::CompOtt, 0) => if choice(sub, 2) == 1 { "Depth" } else { "Thresh" },
+        (FxKind::CompOtt, 1) => if choice(sub, 2) == 1 { "Time" } else { "Ratio" },
+        (FxKind::CompOtt, 2) => "Gain",
+        (FxKind::CompOtt, 3) => "Low",
+        (FxKind::CompOtt, 4) => "Mid",
+        (FxKind::CompOtt, 5) => "High",
         (FxKind::Convolver, 0) => "Size",
         (FxKind::Convolver, 1) => "Tone",
-        (FxKind::Convolver, _) => "Damp",
+        (FxKind::Convolver, 2) => "Damp",
+        _ => "—",
     };
     name.to_owned()
 }
 
 macro_rules! fx_label_fns {
-    ($slot:expr, $f0:ident, $f1:ident, $f2:ident, $f3:ident) => {
+    ($slot:expr, $f0:ident, $f1:ident, $f2:ident, $f3:ident, $f4:ident, $f5:ident, $f6:ident, $f7:ident) => {
         fn $f0(p: &[f32]) -> String { fx_knob_label(p, $slot, 0) }
         fn $f1(p: &[f32]) -> String { fx_knob_label(p, $slot, 1) }
         fn $f2(p: &[f32]) -> String { fx_knob_label(p, $slot, 2) }
         fn $f3(p: &[f32]) -> String { fx_knob_label(p, $slot, 3) }
+        fn $f4(p: &[f32]) -> String { fx_knob_label(p, $slot, 4) }
+        fn $f5(p: &[f32]) -> String { fx_knob_label(p, $slot, 5) }
+        fn $f6(p: &[f32]) -> String { fx_knob_label(p, $slot, 6) }
+        fn $f7(p: &[f32]) -> String { fx_knob_label(p, $slot, 7) }
     };
 }
 
-fx_label_fns!(0, fx0_l0, fx0_l1, fx0_l2, fx0_l3);
-fx_label_fns!(1, fx1_l0, fx1_l1, fx1_l2, fx1_l3);
-fx_label_fns!(2, fx2_l0, fx2_l1, fx2_l2, fx2_l3);
-fx_label_fns!(3, fx3_l0, fx3_l1, fx3_l2, fx3_l3);
-fx_label_fns!(4, fx4_l0, fx4_l1, fx4_l2, fx4_l3);
-fx_label_fns!(5, fx5_l0, fx5_l1, fx5_l2, fx5_l3);
-fx_label_fns!(6, fx6_l0, fx6_l1, fx6_l2, fx6_l3);
-fx_label_fns!(7, fx7_l0, fx7_l1, fx7_l2, fx7_l3);
-fx_label_fns!(8, fx8_l0, fx8_l1, fx8_l2, fx8_l3);
-fx_label_fns!(9, fx9_l0, fx9_l1, fx9_l2, fx9_l3);
-fx_label_fns!(10, fx10_l0, fx10_l1, fx10_l2, fx10_l3);
-fx_label_fns!(11, fx11_l0, fx11_l1, fx11_l2, fx11_l3);
-fx_label_fns!(12, fx12_l0, fx12_l1, fx12_l2, fx12_l3);
-fx_label_fns!(13, fx13_l0, fx13_l1, fx13_l2, fx13_l3);
-fx_label_fns!(14, fx14_l0, fx14_l1, fx14_l2, fx14_l3);
-fx_label_fns!(15, fx15_l0, fx15_l1, fx15_l2, fx15_l3);
+fx_label_fns!(0, fx0_l0, fx0_l1, fx0_l2, fx0_l3, fx0_l4, fx0_l5, fx0_l6, fx0_l7);
+fx_label_fns!(1, fx1_l0, fx1_l1, fx1_l2, fx1_l3, fx1_l4, fx1_l5, fx1_l6, fx1_l7);
+fx_label_fns!(2, fx2_l0, fx2_l1, fx2_l2, fx2_l3, fx2_l4, fx2_l5, fx2_l6, fx2_l7);
+fx_label_fns!(3, fx3_l0, fx3_l1, fx3_l2, fx3_l3, fx3_l4, fx3_l5, fx3_l6, fx3_l7);
+fx_label_fns!(4, fx4_l0, fx4_l1, fx4_l2, fx4_l3, fx4_l4, fx4_l5, fx4_l6, fx4_l7);
+fx_label_fns!(5, fx5_l0, fx5_l1, fx5_l2, fx5_l3, fx5_l4, fx5_l5, fx5_l6, fx5_l7);
+fx_label_fns!(6, fx6_l0, fx6_l1, fx6_l2, fx6_l3, fx6_l4, fx6_l5, fx6_l6, fx6_l7);
+fx_label_fns!(7, fx7_l0, fx7_l1, fx7_l2, fx7_l3, fx7_l4, fx7_l5, fx7_l6, fx7_l7);
+fx_label_fns!(8, fx8_l0, fx8_l1, fx8_l2, fx8_l3, fx8_l4, fx8_l5, fx8_l6, fx8_l7);
+fx_label_fns!(9, fx9_l0, fx9_l1, fx9_l2, fx9_l3, fx9_l4, fx9_l5, fx9_l6, fx9_l7);
+fx_label_fns!(10, fx10_l0, fx10_l1, fx10_l2, fx10_l3, fx10_l4, fx10_l5, fx10_l6, fx10_l7);
+fx_label_fns!(11, fx11_l0, fx11_l1, fx11_l2, fx11_l3, fx11_l4, fx11_l5, fx11_l6, fx11_l7);
 
-const FX_LABEL_FNS: [[fn(&[f32]) -> String; 4]; 16] = [
-    [fx0_l0, fx0_l1, fx0_l2, fx0_l3],
-    [fx1_l0, fx1_l1, fx1_l2, fx1_l3],
-    [fx2_l0, fx2_l1, fx2_l2, fx2_l3],
-    [fx3_l0, fx3_l1, fx3_l2, fx3_l3],
-    [fx4_l0, fx4_l1, fx4_l2, fx4_l3],
-    [fx5_l0, fx5_l1, fx5_l2, fx5_l3],
-    [fx6_l0, fx6_l1, fx6_l2, fx6_l3],
-    [fx7_l0, fx7_l1, fx7_l2, fx7_l3],
-    [fx8_l0, fx8_l1, fx8_l2, fx8_l3],
-    [fx9_l0, fx9_l1, fx9_l2, fx9_l3],
-    [fx10_l0, fx10_l1, fx10_l2, fx10_l3],
-    [fx11_l0, fx11_l1, fx11_l2, fx11_l3],
-    [fx12_l0, fx12_l1, fx12_l2, fx12_l3],
-    [fx13_l0, fx13_l1, fx13_l2, fx13_l3],
-    [fx14_l0, fx14_l1, fx14_l2, fx14_l3],
-    [fx15_l0, fx15_l1, fx15_l2, fx15_l3],
+const FX_LABEL_FNS: [[fn(&[f32]) -> String; 8]; 12] = [
+    [fx0_l0, fx0_l1, fx0_l2, fx0_l3, fx0_l4, fx0_l5, fx0_l6, fx0_l7],
+    [fx1_l0, fx1_l1, fx1_l2, fx1_l3, fx1_l4, fx1_l5, fx1_l6, fx1_l7],
+    [fx2_l0, fx2_l1, fx2_l2, fx2_l3, fx2_l4, fx2_l5, fx2_l6, fx2_l7],
+    [fx3_l0, fx3_l1, fx3_l2, fx3_l3, fx3_l4, fx3_l5, fx3_l6, fx3_l7],
+    [fx4_l0, fx4_l1, fx4_l2, fx4_l3, fx4_l4, fx4_l5, fx4_l6, fx4_l7],
+    [fx5_l0, fx5_l1, fx5_l2, fx5_l3, fx5_l4, fx5_l5, fx5_l6, fx5_l7],
+    [fx6_l0, fx6_l1, fx6_l2, fx6_l3, fx6_l4, fx6_l5, fx6_l6, fx6_l7],
+    [fx7_l0, fx7_l1, fx7_l2, fx7_l3, fx7_l4, fx7_l5, fx7_l6, fx7_l7],
+    [fx8_l0, fx8_l1, fx8_l2, fx8_l3, fx8_l4, fx8_l5, fx8_l6, fx8_l7],
+    [fx9_l0, fx9_l1, fx9_l2, fx9_l3, fx9_l4, fx9_l5, fx9_l6, fx9_l7],
+    [fx10_l0, fx10_l1, fx10_l2, fx10_l3, fx10_l4, fx10_l5, fx10_l6, fx10_l7],
+    [fx11_l0, fx11_l1, fx11_l2, fx11_l3, fx11_l4, fx11_l5, fx11_l6, fx11_l7],
 ];
 
 fn fx_page() -> Part {
-    let slot_row = |slot: usize| {
+    let slot_box = |slot: usize| {
         let at = param::fx_at(slot);
-        let b = 65000 + (slot as u32) * 20;
+        let b = 65000 + (slot as u32) * 30;
         let label = match slot {
             0 => "FX 1", 1 => "FX 2", 2 => "FX 3", 3 => "FX 4",
             4 => "FX 5", 5 => "FX 6", 6 => "FX 7", 7 => "FX 8",
-            8 => "FX 9", 9 => "FX 10", 10 => "FX 11", 11 => "FX 12",
-            12 => "FX 13", 13 => "FX 14", 14 => "FX 15", _ => "FX 16",
+            8 => "FX 9", 9 => "FX 10", 10 => "FX 11", _ => "FX 12",
         };
         let fns = FX_LABEL_FNS[slot];
-              let mode_spin = |id_off: u32, items: &'static [&'static str], kind_idx: usize| {
+        let mode_spin = |id_off: u32, items: &'static [&'static str], kind_idx: usize| {
             spinner(b + id_off, "Mode")
                 .p(at + FX_SUB)
                 .items(items)
                 .show(Show::Item(at + FX_KIND, kind_idx))
         };
-        
-        hstack([
-            display(b + 15)
-                .w(Size::U(1.1))
-                .draw(match slot {
-                    0 => draw_fx_swap_0, 1 => draw_fx_swap_1, 2 => draw_fx_swap_2, 3 => draw_fx_swap_3,
-                    4 => draw_fx_swap_4, 5 => draw_fx_swap_5, 6 => draw_fx_swap_6, 7 => draw_fx_swap_7,
-                    8 => draw_fx_swap_8, 9 => draw_fx_swap_9, 10 => draw_fx_swap_10, 11 => draw_fx_swap_11,
-                    12 => draw_fx_swap_12, 13 => draw_fx_swap_13, 14 => draw_fx_swap_14, _ => draw_fx_swap_15,
-                }),
+        let swap_fn: Draw = match slot {
+            0 => draw_fx_swap_0, 1 => draw_fx_swap_1, 2 => draw_fx_swap_2, 3 => draw_fx_swap_3,
+            4 => draw_fx_swap_4, 5 => draw_fx_swap_5, 6 => draw_fx_swap_6, 7 => draw_fx_swap_7,
+            8 => draw_fx_swap_8, 9 => draw_fx_swap_9, 10 => draw_fx_swap_10, _ => draw_fx_swap_11,
+        };
+        let frame_fn: Draw = match slot {
+            0 => draw_fx_frame_0, 1 => draw_fx_frame_1, 2 => draw_fx_frame_2, 3 => draw_fx_frame_3,
+            4 => draw_fx_frame_4, 5 => draw_fx_frame_5, 6 => draw_fx_frame_6, 7 => draw_fx_frame_7,
+            8 => draw_fx_frame_8, 9 => draw_fx_frame_9, 10 => draw_fx_frame_10, _ => draw_fx_frame_11,
+        };
+
+        let top_row = hstack([
+            display(b + 15).w(Size::U(1.05)).draw(swap_fn),
             toggle(b + 1, "On").p(at + FX_ON),
             spinner(b + 2, label).p(at + FX_KIND).items_per_column(5),
-            mode_spin(30, &["Tube", "Hard", "Fold", "Crush"], 2),
-            mode_spin(31, &["LP 12", "LP 24", "HP 12", "HP 24", "BP 12", "Notch", "Comb"], 3),
-            mode_spin(32, &["Chorus", "Flanger"], 4),
-            mode_spin(33, &["Stereo", "Ping-Pong"], 5),
-            mode_spin(34, &["Mid", "Sub", "Air"], 7),
-            mode_spin(35, &["Comp", "OTT"], 8),
-            mode_spin(36, &["Room", "Hall", "Metal", "Cab", "Spring"], 9),
+            mode_spin(20, &["Tube", "Hard", "Fold", "Crush"], 2),
+            mode_spin(21, &["LP 12", "LP 24", "HP 12", "HP 24", "BP 12", "Notch", "Comb"], 3),
+            mode_spin(22, &["Chorus", "Flanger"], 4),
+            mode_spin(23, &["Stereo", "Ping-Pong"], 5),
+            mode_spin(
+                24,
+                &[
+                    "LowSh+Pk+HiSh",
+                    "HP+Pk+LP",
+                    "HP+Pk+HiSh",
+                    "LowSh+Pk+LP",
+                    "3x Peak",
+                    "LowSh+2xPk",
+                    "2xPk+LP",
+                    "2xPk+HiSh",
+                    "HP+2xPk",
+                ],
+                7,
+            ),
+            mode_spin(25, &["Comp", "OTT"], 8),
+            mode_spin(26, &["Room", "Hall", "Metal", "Cab", "Spring"], 9),
             knob(b + 4, "—").p(at + FX_P1).label_fn(fns[0usize]),
             knob(b + 5, "—").p(at + FX_P2).label_fn(fns[1usize]),
             knob(b + 6, "—").p(at + FX_P3).label_fn(fns[2usize]),
-            knob(b + 7, "—").p(at + FX_MIX).label_fn(fns[3usize]),
+            knob(b + 7, "—").p(at + FX_MIX).label_fn(fns[7usize]),
+        ]);
+
+        let eq_bottom = hstack([
+            spacer(b + 16).w(Size::U(2.6)),
+            knob(b + 8, "Gain 1").p(at + FX_P4).label_fn(fns[3usize]),
+            knob(b + 9, "Gain 2").p(at + FX_P5).label_fn(fns[4usize]),
+            knob(b + 10, "Gain 3").p(at + FX_P6).label_fn(fns[5usize]),
+            knob(b + 11, "Res").p(at + FX_P7).label_fn(fns[6usize]),
         ])
+        .h(Size::U(1.15))
+        .show(Show::Item(at + FX_KIND, 7));
+
+        let ott_bottom = hstack([
+            spacer(b + 17).w(Size::U(2.6)),
+            knob(b + 12, "Low").p(at + FX_P4).label_fn(fns[3usize]),
+            knob(b + 13, "Mid").p(at + FX_P5).label_fn(fns[4usize]),
+            knob(b + 14, "High").p(at + FX_P6).label_fn(fns[5usize]),
+        ])
+        .h(Size::U(1.15))
+        .show(Show::Item(at + FX_KIND, 8));
+
+        layer([
+            display(b + 18).draw(frame_fn),
+            vstack([top_row, eq_bottom, ott_bottom]).margins(0.08, 0.12, 0.08, 0.12),
+        ])
+        .margins(0.06, 0.08, 0.06, 0.08)
     };
 
     vstack([
-        list(64100, FX_TABS, Bar::Bottom).h(Size::U(1.1)),
+        list(64100, FX_TABS, Bar::Bottom).h(Size::U(1.05)),
         display(64200)
-            .margins(0.15, 0.2, 0.15, 0.2)
-            .h(Size::U(2.35))
+            .margins(0.12, 0.18, 0.12, 0.18)
+            .h(Size::U(2.15))
             .draw(draw_fx_graph),
-        vstack([slot_row(0), slot_row(1), slot_row(2), slot_row(3)])
+        vstack([slot_box(0), slot_box(1), slot_box(2), slot_box(3)])
             .show(Show::Setting(64100, 0)),
-        vstack([slot_row(4), slot_row(5), slot_row(6), slot_row(7)])
+        vstack([slot_box(4), slot_box(5), slot_box(6), slot_box(7)])
             .show(Show::Setting(64100, 1)),
-        vstack([slot_row(8), slot_row(9), slot_row(10), slot_row(11)])
+        vstack([slot_box(8), slot_box(9), slot_box(10), slot_box(11)])
             .show(Show::Setting(64100, 2)),
-        vstack([slot_row(12), slot_row(13), slot_row(14), slot_row(15)])
-            .show(Show::Setting(64100, 3)),
     ])
 }
 
@@ -1055,6 +1088,49 @@ fn draw_lfo_idx(
     changed
 }
 
+fn draw_fx_frame_0(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_frame(ui, cx, r, m, 0, ink) }
+fn draw_fx_frame_1(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_frame(ui, cx, r, m, 1, ink) }
+fn draw_fx_frame_2(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_frame(ui, cx, r, m, 2, ink) }
+fn draw_fx_frame_3(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_frame(ui, cx, r, m, 3, ink) }
+fn draw_fx_frame_4(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_frame(ui, cx, r, m, 4, ink) }
+fn draw_fx_frame_5(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_frame(ui, cx, r, m, 5, ink) }
+fn draw_fx_frame_6(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_frame(ui, cx, r, m, 6, ink) }
+fn draw_fx_frame_7(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_frame(ui, cx, r, m, 7, ink) }
+fn draw_fx_frame_8(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_frame(ui, cx, r, m, 8, ink) }
+fn draw_fx_frame_9(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_frame(ui, cx, r, m, 9, ink) }
+fn draw_fx_frame_10(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_frame(ui, cx, r, m, 10, ink) }
+fn draw_fx_frame_11(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_frame(ui, cx, r, m, 11, ink) }
+
+fn draw_fx_frame(
+    ui: &mut Ui,
+    cx: &UiCtx,
+    r: Rect,
+    module: &ModuleInstance,
+    slot: usize,
+    ink: Color32,
+) -> Vec<usize> {
+    let colors = &cx.theme.colors;
+    let px = 1.0 / cx.m.ppp();
+    let painter = ui.painter();
+    let at = param::fx_at(slot);
+    let on = module.params.get(at + FX_ON).copied().unwrap_or(1.0) >= 0.5;
+    let kind = FxKind::from_param(module.params.get(at + FX_KIND).copied().unwrap_or(0.0));
+    let lit = on && !matches!(kind, FxKind::Empty);
+
+    let bg = if lit {
+        colors.control_fill.to_color32()
+    } else {
+        colors.control_fill.to_color32().gamma_multiply(0.55)
+    };
+    let border = if lit {
+        Stroke::new(1.5 * px, ink)
+    } else {
+        Stroke::new(px, colors.text.to_color32().gamma_multiply(0.22))
+    };
+    painter.rect(r, 5.0 * px, bg, border, eframe::egui::StrokeKind::Inside);
+    Vec::new()
+}
+
 fn draw_fx_swap_0(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 0, ink) }
 fn draw_fx_swap_1(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 1, ink) }
 fn draw_fx_swap_2(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 2, ink) }
@@ -1067,10 +1143,6 @@ fn draw_fx_swap_8(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInsta
 fn draw_fx_swap_9(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 9, ink) }
 fn draw_fx_swap_10(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 10, ink) }
 fn draw_fx_swap_11(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 11, ink) }
-fn draw_fx_swap_12(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 12, ink) }
-fn draw_fx_swap_13(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 13, ink) }
-fn draw_fx_swap_14(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 14, ink) }
-fn draw_fx_swap_15(ui: &mut Ui, cx: &UiCtx, _id: Id, r: Rect, m: &mut ModuleInstance, _s: &mut PanelState, ink: Color32) -> Vec<usize> { draw_fx_swap(ui, cx, r, m, 15, ink) }
 
 fn draw_fx_swap(
     ui: &mut Ui,
@@ -1087,7 +1159,7 @@ fn draw_fx_swap(
     let up_r = Rect::from_min_max(r.min, pos2(r.max.x, r.min.y + half_h)).shrink(1.5 * px);
     let dn_r = Rect::from_min_max(pos2(r.min.x, r.min.y + half_h), r.max).shrink(1.5 * px);
 
-    let fill = colors.control_fill.to_color32();
+    let fill = colors.background.to_color32().gamma_multiply(0.65);
     let tri = 4.0 * px;
     let mut changed = Vec::new();
 
@@ -1103,14 +1175,14 @@ fn draw_fx_swap(
         if resp.clicked() {
             let a = param::fx_at(slot);
             let b = param::fx_at(slot - 1);
-            for k in 0..7 {
+            for k in 0..11 {
                 module.params.swap(a + k, b + k);
                 changed.push(a + k);
                 changed.push(b + k);
             }
         }
     }
-    if slot < 15 {
+    if slot < 11 {
         painter.rect_filled(dn_r, 3.0 * px, fill);
         let c = dn_r.center();
         painter.add(Shape::convex_polygon(
@@ -1122,7 +1194,7 @@ fn draw_fx_swap(
         if resp.clicked() {
             let a = param::fx_at(slot);
             let b = param::fx_at(slot + 1);
-            for k in 0..7 {
+            for k in 0..11 {
                 module.params.swap(a + k, b + k);
                 changed.push(a + k);
                 changed.push(b + k);
@@ -1158,7 +1230,7 @@ fn draw_fx_graph(
     }
 
     let page = state.settings.get(&64100).copied().unwrap_or(0.0).round() as usize;
-    let start_slot = (page.min(3)) * 4;
+    let start_slot = (page.min(2)) * 4;
 
     let mut target: Option<(usize, FxKind)> = None;
     for s in start_slot..start_slot + 4 {
@@ -1188,37 +1260,65 @@ fn draw_fx_graph(
     let p1 = module.params.get(at + FX_P1).copied().unwrap_or(0.5);
     let p2 = module.params.get(at + FX_P2).copied().unwrap_or(0.5);
     let p3 = module.params.get(at + FX_P3).copied().unwrap_or(0.5);
+    let p4 = module.params.get(at + FX_P4).copied().unwrap_or(0.5);
+    let p5 = module.params.get(at + FX_P5).copied().unwrap_or(0.5);
+    let p6 = module.params.get(at + FX_P6).copied().unwrap_or(0.5);
+    let p7 = module.params.get(at + FX_P7).copied().unwrap_or(0.25);
 
     let steps = 96usize;
     let mut points = Vec::with_capacity(steps);
 
     match kind {
         FxKind::Eq3 => {
-            let (f_low, f_mid, f_high) = match choice(sub, 3) {
-                0 => (120.0f32, 1000.0f32, 6500.0f32),
-                1 => (80.0, 600.0, 4500.0),
-                _ => (200.0, 2200.0, 9000.0),
+            let f1 = 20.0 * 2.0f32.powf(10.0 * p1);
+            let f2 = 20.0 * 2.0f32.powf(10.0 * p2);
+            let f3 = 20.0 * 2.0f32.powf(10.0 * p3);
+            let g1 = (p4 * 2.0 - 1.0) * 15.0;
+            let g2 = (p5 * 2.0 - 1.0) * 15.0;
+            let g3 = (p6 * 2.0 - 1.0) * 15.0;
+            let q = 0.707 + 7.5 * p7 * p7;
+            let mode = choice(sub, 9);
+
+            let peak_db = |f: f32, fc: f32, gain: f32| {
+                let d = (f / fc).log2() * q.sqrt();
+                gain * (-d * d * 2.2).exp()
             };
-            let g_low = (p1 * 2.0 - 1.0) * 15.0;
-            let g_mid = (p2 * 2.0 - 1.0) * 15.0;
-            let g_high = (p3 * 2.0 - 1.0) * 15.0;
+            let hp_db = |f: f32, fc: f32| {
+                let w = (f / fc).max(1e-4);
+                let w2 = w * w;
+                let denom = ((1.0 - w2).powi(2) + (w / q).powi(2)).sqrt().max(1e-4);
+                20.0 * (w2 / denom).max(1e-3).log10()
+            };
+            let lp_db = |f: f32, fc: f32| {
+                let w = (f / fc).max(1e-4);
+                let w2 = w * w;
+                let denom = ((1.0 - w2).powi(2) + (w / q).powi(2)).sqrt().max(1e-4);
+                20.0 * (1.0 / denom).max(1e-3).log10()
+            };
 
             for i in 0..steps {
                 let t = i as f32 / (steps - 1) as f32;
                 let f = 20.0 * 2.0f32.powf(10.0 * t);
-                let low_w = 1.0 / (1.0 + (f / f_low).powi(2));
-                let mid_d = (f / f_mid).log2();
-                let mid_w = (-mid_d * mid_d * 2.2).exp();
-                let high_w = 1.0 / (1.0 + (f_high / f).powi(2));
-                let db = (g_low * low_w + g_mid * mid_w + g_high * high_w).clamp(-18.0, 18.0);
-                let ny = ((db + 18.0) / 36.0).clamp(0.0, 1.0);
+                let b1 = match mode {
+                    0 | 3 | 5 => g1 / (1.0 + (f / f1).powi(2)),
+                    1 | 2 | 8 => hp_db(f, f1),
+                    _ => peak_db(f, f1, g1),
+                };
+                let b2 = peak_db(f, f2, g2);
+                let b3 = match mode {
+                    0 | 2 | 7 => g3 / (1.0 + (f3 / f).powi(2)),
+                    1 | 3 | 6 => lp_db(f, f3),
+                    _ => peak_db(f, f3, g3),
+                };
+                let db = (b1 + b2 + b3).clamp(-24.0, 24.0);
+                let ny = ((db + 24.0) / 48.0).clamp(0.0, 1.0);
                 points.push(pos2(inner.left() + t * inner.width(), inner.bottom() - ny * inner.height()));
             }
             painter.add(Shape::line(points, Stroke::new(2.0 * px, ink)));
             painter.text(
                 pos2(inner.left() + 4.0 * px, inner.top() + 2.0 * px),
                 Align2::LEFT_TOP,
-                format!("FX {} · 3-Band EQ (L {:+.1} dB · M {:+.1} dB · H {:+.1} dB)", slot + 1, g_low, g_mid, g_high),
+                format!("FX {} · EQ ({} · {} · {} · Q {:.1})", slot + 1, format_hz(f1), format_hz(f2), format_hz(f3), q),
                 font,
                 colors.text.to_color32(),
             );
@@ -1267,5 +1367,4 @@ pub const REFERENCE: Reference = Reference {
     settings: &[],
     cases: &[],
 };
-
-            
+        
