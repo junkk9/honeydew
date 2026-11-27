@@ -13,6 +13,7 @@ use honeydew_audio::dewserum::wavetable::{
 use honeydew_audio::dewserum::{
     ANALYSIS_LEN, ENV_COUNT, FilterKind, LFO_COUNT, MACRO_COUNT, SCOPE_SAMPLES, WarpMode, param,
 };
+use honeydew_audio::dewserum::fx::{FX_KIND, FX_MIX, FX_ON, FX_P1, FX_P2, FX_P3, FX_SUB};
 
 use crate::flm::chunk::{ChunkIter, ChunkWriter, ContentPath};
 use crate::metrics::FontSize;
