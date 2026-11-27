@@ -4,9 +4,9 @@ use crate::biquad::{Biquad, Response, flush};
 use super::FilterKind;
 use super::modulation::choice;
 
-pub const FX_SLOTS: usize = 16;
-/// Per slot: `[Kind, Bypass(On=1/Off=0), SubMode, P1, P2, P3, Mix]` = 7 params.
-pub const FX_SLOT_PARAMS: usize = 7;
+pub const FX_SLOTS: usize = 12;
+/// Per slot: `[Kind, On, SubMode, P1, P2, P3, P4, P5, P6, P7, Mix]` = 11 params.
+pub const FX_SLOT_PARAMS: usize = 11;
 
 pub const FX_KIND: usize = 0;
 pub const FX_ON: usize = 1;
@@ -14,7 +14,11 @@ pub const FX_SUB: usize = 2;
 pub const FX_P1: usize = 3;
 pub const FX_P2: usize = 4;
 pub const FX_P3: usize = 5;
-pub const FX_MIX: usize = 6;
+pub const FX_P4: usize = 6;
+pub const FX_P5: usize = 7;
+pub const FX_P6: usize = 8;
+pub const FX_P7: usize = 9;
+pub const FX_MIX: usize = 10;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum FxKind {
@@ -71,6 +75,10 @@ pub struct SlotInputs {
     pub p1: f32,
     pub p2: f32,
     pub p3: f32,
+    pub p4: f32,
+    pub p5: f32,
+    pub p6: f32,
+    pub p7: f32,
     pub mix: f32,
 }
 
@@ -565,7 +573,7 @@ impl ReverbFxState {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// 7. 3-Band EQ (Low Shelf + Mid Peak + High Shelf)
+// 7. 3-Band EQ (9 configurations + Freq 1..3 + Gain 1..3 + Res + Mix)
 // ---------------------------------------------------------------------------------------------------------------------
 
 #[derive(Default)]
@@ -583,21 +591,81 @@ impl Eq3State {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn process(&mut self, l: f32, r: f32, sub: f32, p1: f32, p2: f32, p3: f32, mix: f32, sr: f32) -> (f32, f32) {
-        let (f_low, f_mid, f_high) = match choice(sub, 3) {
-            0 => (120.0, 1000.0, 6500.0),
-            1 => (80.0, 600.0, 4500.0),
-            _ => (200.0, 2200.0, 9000.0),
-        };
-        let g_low = (p1.clamp(0.0, 1.0) * 2.0 - 1.0) * 15.0;
-        let g_mid = (p2.clamp(0.0, 1.0) * 2.0 - 1.0) * 15.0;
-        let g_high = (p3.clamp(0.0, 1.0) * 2.0 - 1.0) * 15.0;
+    fn process(
+        &mut self,
+        l: f32,
+        r: f32,
+        sub: f32,
+        p1: f32,
+        p2: f32,
+        p3: f32,
+        p4: f32,
+        p5: f32,
+        p6: f32,
+        p7: f32,
+        mix: f32,
+        sr: f32,
+    ) -> (f32, f32) {
+        let freq = |v: f32| (20.0 * 2.0f32.powf(10.0 * v.clamp(0.0, 1.0))).clamp(20.0, 0.45 * sr);
+        let f1 = freq(p1);
+        let f2 = freq(p2);
+        let f3 = freq(p3);
+        let g1 = (p4.clamp(0.0, 1.0) * 2.0 - 1.0) * 15.0;
+        let g2 = (p5.clamp(0.0, 1.0) * 2.0 - 1.0) * 15.0;
+        let g3 = (p6.clamp(0.0, 1.0) * 2.0 - 1.0) * 15.0;
+        let q = 0.707 + 7.5 * p7.clamp(0.0, 1.0).powi(2);
 
+        let mode = choice(sub, 9);
         let mut out = [l, r];
+
         for ch in 0..2 {
-            self.low[ch].set_parametric_response(Response::LowShelf, f_low, 0.75, g_low, sr);
-            self.mid[ch].set_parametric_response(Response::Peak, f_mid, 1.1, g_mid, sr);
-            self.high[ch].set_parametric_response(Response::HighShelf, f_high, 0.75, g_high, sr);
+            match mode {
+                0 => {
+                    self.low[ch].set_parametric_response(Response::LowShelf, f1, 0.75, g1, sr);
+                    self.mid[ch].set_parametric_response(Response::Peak, f2, q, g2, sr);
+                    self.high[ch].set_parametric_response(Response::HighShelf, f3, 0.75, g3, sr);
+                }
+                1 => {
+                    self.low[ch].set_filter_response(Response::HighPass, f1, q, sr);
+                    self.mid[ch].set_parametric_response(Response::Peak, f2, q, g2, sr);
+                    self.high[ch].set_filter_response(Response::LowPass, f3, q, sr);
+                }
+                2 => {
+                    self.low[ch].set_filter_response(Response::HighPass, f1, q, sr);
+                    self.mid[ch].set_parametric_response(Response::Peak, f2, q, g2, sr);
+                    self.high[ch].set_parametric_response(Response::HighShelf, f3, 0.75, g3, sr);
+                }
+                3 => {
+                    self.low[ch].set_parametric_response(Response::LowShelf, f1, 0.75, g1, sr);
+                    self.mid[ch].set_parametric_response(Response::Peak, f2, q, g2, sr);
+                    self.high[ch].set_filter_response(Response::LowPass, f3, q, sr);
+                }
+                4 => {
+                    self.low[ch].set_parametric_response(Response::Peak, f1, q, g1, sr);
+                    self.mid[ch].set_parametric_response(Response::Peak, f2, q, g2, sr);
+                    self.high[ch].set_parametric_response(Response::Peak, f3, q, g3, sr);
+                }
+                5 => {
+                    self.low[ch].set_parametric_response(Response::LowShelf, f1, 0.75, g1, sr);
+                    self.mid[ch].set_parametric_response(Response::Peak, f2, q, g2, sr);
+                    self.high[ch].set_parametric_response(Response::Peak, f3, q, g3, sr);
+                }
+                6 => {
+                    self.low[ch].set_parametric_response(Response::Peak, f1, q, g1, sr);
+                    self.mid[ch].set_parametric_response(Response::Peak, f2, q, g2, sr);
+                    self.high[ch].set_filter_response(Response::LowPass, f3, q, sr);
+                }
+                7 => {
+                    self.low[ch].set_parametric_response(Response::Peak, f1, q, g1, sr);
+                    self.mid[ch].set_parametric_response(Response::Peak, f2, q, g2, sr);
+                    self.high[ch].set_parametric_response(Response::HighShelf, f3, 0.75, g3, sr);
+                }
+                _ => {
+                    self.low[ch].set_filter_response(Response::HighPass, f1, q, sr);
+                    self.mid[ch].set_parametric_response(Response::Peak, f2, q, g2, sr);
+                    self.high[ch].set_parametric_response(Response::Peak, f3, q, g3, sr);
+                }
+            }
             let y = self.low[ch].process(out[ch]);
             let y = self.mid[ch].process(y);
             out[ch] = self.high[ch].process(y);
@@ -608,7 +676,7 @@ impl Eq3State {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// 8. Compressor / OTT 3-Band Multiband
+// 8. Compressor / OTT 3-Band Multiband (with Low / Mid / High band gains as in Serum 2)
 // ---------------------------------------------------------------------------------------------------------------------
 
 struct CompOttState {
@@ -636,7 +704,20 @@ impl CompOttState {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn process(&mut self, l: f32, r: f32, sub: f32, p1: f32, p2: f32, p3: f32, mix: f32, sr: f32) -> (f32, f32) {
+    fn process(
+        &mut self,
+        l: f32,
+        r: f32,
+        sub: f32,
+        p1: f32,
+        p2: f32,
+        p3: f32,
+        p4: f32,
+        p5: f32,
+        p6: f32,
+        mix: f32,
+        sr: f32,
+    ) -> (f32, f32) {
         let is_ott = choice(sub, 2) == 1;
         let out_gain = 0.5 + 2.5 * p3.clamp(0.0, 1.0);
         let inputs = [l, r];
@@ -662,6 +743,11 @@ impl CompOttState {
         } else {
             let depth = p1.clamp(0.0, 1.0);
             let time_s = 0.008 + 0.140 * p2.clamp(0.0, 1.0);
+            let band_gains = [
+                0.25 + 1.5 * p4.clamp(0.0, 1.0), // Low
+                0.25 + 1.5 * p5.clamp(0.0, 1.0), // Mid
+                0.25 + 1.5 * p6.clamp(0.0, 1.0), // High
+            ];
             let att = 1.0 - (-1.0 / (0.003 * sr.max(1.0))).exp();
             let rel = 1.0 - (-1.0 / (time_s * sr.max(1.0))).exp();
             let up_thresh = [0.16f32, 0.14, 0.12];
@@ -688,7 +774,7 @@ impl CompOttState {
                     } else {
                         1.0
                     };
-                    let g = 1.0 + (ott_g - 1.0) * depth;
+                    let g = (1.0 + (ott_g - 1.0) * depth) * band_gains[b];
                     sum += bands[b] * g;
                 }
                 outs[ch] = (sum * out_gain).tanh();
