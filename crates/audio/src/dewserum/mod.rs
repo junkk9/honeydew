@@ -281,8 +281,6 @@ pub mod param {
     pub const FX_BASE: usize = MACRO_BASE + 4; // 430..=541 (16 * 7)
     pub const COUNT: usize = FX_BASE + 16 * 7; // 542
 
-    pub const COUNT: usize = MACRO_BASE + 4; // 430
-
     pub const fn env_at(index: usize) -> usize {
         ENV_BASE + index * ENV_PARAMS
     }
@@ -313,10 +311,10 @@ pub mod param {
 
     pub const fn macro_at(index: usize) -> usize {
         MACRO_BASE + index
-    pub const fn fx_at(slot: usize) -> usize {
-        FX_BASE + slot * 7
     }
     
+    pub const fn fx_at(slot: usize) -> usize {
+        FX_BASE + slot * 7
     }
 }
 
@@ -389,7 +387,7 @@ pub fn defaults() -> [f32; PARAM_COUNT] {
     }
     p
         }
-    // ---------------------------------------------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------------------------------------
 // Param laws & Control
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -556,9 +554,7 @@ impl Control {
                 mix: p[at + FX_MIX].clamp(0.0, 1.0),
             }
         });
-        Self {macros, fx_slots,}
-              
-            
+            Self {
             osc,
             fm_from_b: p[param::OSC_A_FM].clamp(0.0, 1.0),
             sub_shape: SubShape::from_param(p[param::SUB_SHAPE]),
@@ -571,6 +567,7 @@ impl Control {
             voice_mode: VoiceMode::from_param(p[param::VOICE_MODE]),
             glide_time: p[param::GLIDE_TIME].clamp(0.0, 1.0),
             macros,
+            fx_slots,
             lfo_ctrl,
             env1: adsr(0usize, sample_rate),
             env_mod: [
@@ -1225,6 +1222,9 @@ impl DewSerum {
             scope_ring: [0.0; SCOPE_SAMPLES],
             scope_pos: 0,
             analysis_buf: [0.0; ANALYSIS_LEN],
+            fx_rack: FxRack::new(sample_rate),
+            fx_mod_inputs: control.fx_slots,
+        }
         }
     }
 
@@ -1414,7 +1414,6 @@ impl DewSerum {
             self.analysis_buf[base..base + vals.len()].copy_from_slice(&vals);
         } else {
             self.analysis_buf[SCOPE_SAMPLES..ANALYSIS_LEN].fill(0.0);
-            self.fx_rack.reset();
             
         }
     }
@@ -1474,7 +1473,7 @@ impl Instrument for DewSerum {
         self.master_step = 0.0;
         self.scope_ring.fill(0.0);
         self.analysis_buf.fill(0.0);
-        self.fx_rack.reset();!
+        self.fx_rack.reset();
     }
 
     fn process(&mut self, left: &mut [f32], right: &mut [f32], context: ProcessContext) {
