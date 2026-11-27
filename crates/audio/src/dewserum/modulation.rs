@@ -878,6 +878,12 @@ impl Default for ModValues {
     }
 }
 
+impl ModValues {
+    pub fn get(&self, dest: ModDest) -> f32 {
+        self.0[dest as usize]
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ModMatrix {
     pub slots: [Slot; SLOTS],
