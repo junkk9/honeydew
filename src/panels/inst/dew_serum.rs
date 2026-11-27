@@ -415,10 +415,11 @@ fn fx_page() -> Part {
             8 => "FX 9", 9 => "FX 10", 10 => "FX 11", _ => "FX 12",
         };
         let fns = FX_LABEL_FNS[slot];
-        let mode_spin = |id_off: u32, items: &'static [&'static str], kind_idx: usize| {
+                let mode_spin = |id_off: u32, items: &'static [&'static str], kind_idx: usize| {
             spinner(b + id_off, "Mode")
                 .p(at + FX_SUB)
                 .items(items)
+                .w(Size::U(2.8))
                 .show(Show::Item(at + FX_KIND, kind_idx))
         };
         let swap_fn: Draw = match slot {
@@ -432,10 +433,10 @@ fn fx_page() -> Part {
             8 => draw_fx_frame_8, 9 => draw_fx_frame_9, 10 => draw_fx_frame_10, _ => draw_fx_frame_11,
         };
 
-        let top_row = hstack([
-            display(b + 15).w(Size::U(1.05)).draw(swap_fn),
-            toggle(b + 1, "On").p(at + FX_ON),
-            spinner(b + 2, label).p(at + FX_KIND).items_per_column(5),
+                let top_row = hstack([
+            display(b + 15).w(Size::U(0.95)).draw(swap_fn),
+            toggle(b + 1, "On").p(at + FX_ON).w(Size::U(1.1)),
+            spinner(b + 2, label).p(at + FX_KIND).items_per_column(5).w(Size::U(2.6)),
             mode_spin(20, &["Tube", "Hard", "Fold", "Crush"], 2),
             mode_spin(21, &["LP 12", "LP 24", "HP 12", "HP 24", "BP 12", "Notch", "Comb"], 3),
             mode_spin(22, &["Chorus", "Flanger"], 4),
@@ -461,25 +462,27 @@ fn fx_page() -> Part {
             knob(b + 5, "—").p(at + FX_P2).label_fn(fns[1usize]),
             knob(b + 6, "—").p(at + FX_P3).label_fn(fns[2usize]),
             knob(b + 7, "—").p(at + FX_MIX).label_fn(fns[7usize]),
-        ]);
+        ])
+        .h(Size::U(1.35));
 
         let eq_bottom = hstack([
-            spacer(b + 16).w(Size::U(2.6)),
+            spacer(b + 16).w(Size::U(4.65)),
             knob(b + 8, "Gain 1").p(at + FX_P4).label_fn(fns[3usize]),
             knob(b + 9, "Gain 2").p(at + FX_P5).label_fn(fns[4usize]),
             knob(b + 10, "Gain 3").p(at + FX_P6).label_fn(fns[5usize]),
             knob(b + 11, "Res").p(at + FX_P7).label_fn(fns[6usize]),
         ])
-        .h(Size::U(1.15))
+        .h(Size::U(1.35))
         .show(Show::Item(at + FX_KIND, 7));
 
         let ott_bottom = hstack([
-            spacer(b + 17).w(Size::U(2.6)),
+            spacer(b + 17).w(Size::U(4.65)),
             knob(b + 12, "Low").p(at + FX_P4).label_fn(fns[3usize]),
             knob(b + 13, "Mid").p(at + FX_P5).label_fn(fns[4usize]),
             knob(b + 14, "High").p(at + FX_P6).label_fn(fns[5usize]),
+            spacer(b + 19),
         ])
-        .h(Size::U(1.15))
+        .h(Size::U(1.35))
         .show(Show::Item(at + FX_KIND, 8));
 
         layer([
