@@ -1165,10 +1165,10 @@ pub struct DewSerum {
     master_step: f32,
     scope_ring: [f32; SCOPE_SAMPLES],
     scope_pos: usize,
-    analysis_buf: [0.0; ANALYSIS_LEN],
-    fx_rack: FxRack::new(sample_rate),
-    fx_mod_inputs: control.fx_slots,
-        }
+    analysis_buf: [f32; ANALYSIS_LEN],
+    fx_rack: FxRack,
+    fx_mod_inputs: [SlotInputs; FX_SLOTS],
+}
 
 impl DewSerum {
     pub fn new(sample_rate: f32) -> Self {
@@ -1224,7 +1224,6 @@ impl DewSerum {
             analysis_buf: [0.0; ANALYSIS_LEN],
             fx_rack: FxRack::new(sample_rate),
             fx_mod_inputs: control.fx_slots,
-        }
         }
     }
 
