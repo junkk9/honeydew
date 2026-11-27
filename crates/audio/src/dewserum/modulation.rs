@@ -666,9 +666,25 @@ pub enum ModDest {
     Lfo6Rate,
     Lfo7Rate,
     Lfo8Rate,
+    Fx1P1, Fx1P2, Fx1P3, Fx1Mix,
+    Fx2P1, Fx2P2, Fx2P3, Fx2Mix,
+    Fx3P1, Fx3P2, Fx3P3, Fx3Mix,
+    Fx4P1, Fx4P2, Fx4P3, Fx4Mix,
+    Fx5P1, Fx5P2, Fx5P3, Fx5Mix,
+    Fx6P1, Fx6P2, Fx6P3, Fx6Mix,
+    Fx7P1, Fx7P2, Fx7P3, Fx7Mix,
+    Fx8P1, Fx8P2, Fx8P3, Fx8Mix,
+    Fx9P1, Fx9P2, Fx9P3, Fx9Mix,
+    Fx10P1, Fx10P2, Fx10P3, Fx10Mix,
+    Fx11P1, Fx11P2, Fx11P3, Fx11Mix,
+    Fx12P1, Fx12P2, Fx12P3, Fx12Mix,
+    Fx13P1, Fx13P2, Fx13P3, Fx13Mix,
+    Fx14P1, Fx14P2, Fx14P3, Fx14Mix,
+    Fx15P1, Fx15P2, Fx15P3, Fx15Mix,
+    Fx16P1, Fx16P2, Fx16P3, Fx16Mix,
 }
 
-pub const DEST_COUNT: usize = 28;
+pub const DEST_COUNT: usize = 92;
 
 impl ModDest {
     pub const ALL: [ModDest; DEST_COUNT] = [
@@ -700,8 +716,24 @@ impl ModDest {
         Self::Lfo6Rate,
         Self::Lfo7Rate,
         Self::Lfo8Rate,
+        Self::Fx1P1, Self::Fx1P2, Self::Fx1P3, Self::Fx1Mix,
+        Self::Fx2P1, Self::Fx2P2, Self::Fx2P3, Self::Fx2Mix,
+        Self::Fx3P1, Self::Fx3P2, Self::Fx3P3, Self::Fx3Mix,
+        Self::Fx4P1, Self::Fx4P2, Self::Fx4P3, Self::Fx4Mix,
+        Self::Fx5P1, Self::Fx5P2, Self::Fx5P3, Self::Fx5Mix,
+        Self::Fx6P1, Self::Fx6P2, Self::Fx6P3, Self::Fx6Mix,
+        Self::Fx7P1, Self::Fx7P2, Self::Fx7P3, Self::Fx7Mix,
+        Self::Fx8P1, Self::Fx8P2, Self::Fx8P3, Self::Fx8Mix,
+        Self::Fx9P1, Self::Fx9P2, Self::Fx9P3, Self::Fx9Mix,
+        Self::Fx10P1, Self::Fx10P2, Self::Fx10P3, Self::Fx10Mix,
+        Self::Fx11P1, Self::Fx11P2, Self::Fx11P3, Self::Fx11Mix,
+        Self::Fx12P1, Self::Fx12P2, Self::Fx12P3, Self::Fx12Mix,
+        Self::Fx13P1, Self::Fx13P2, Self::Fx13P3, Self::Fx13Mix,
+        Self::Fx14P1, Self::Fx14P2, Self::Fx14P3, Self::Fx14Mix,
+        Self::Fx15P1, Self::Fx15P2, Self::Fx15P3, Self::Fx15Mix,
+        Self::Fx16P1, Self::Fx16P2, Self::Fx16P3, Self::Fx16Mix,
     ];
-    pub const NAMES: [&'static str; DEST_COUNT] = [
+        pub const NAMES: [&'static str; DEST_COUNT] = [
         "None",
         "A WT Pos",
         "B WT Pos",
@@ -730,10 +762,30 @@ impl ModDest {
         "LFO 6 Rate",
         "LFO 7 Rate",
         "LFO 8 Rate",
+        "FX 1 P1", "FX 1 P2", "FX 1 P3", "FX 1 Mix",
+        "FX 2 P1", "FX 2 P2", "FX 2 P3", "FX 2 Mix",
+        "FX 3 P1", "FX 3 P2", "FX 3 P3", "FX 3 Mix",
+        "FX 4 P1", "FX 4 P2", "FX 4 P3", "FX 4 Mix",
+        "FX 5 P1", "FX 5 P2", "FX 5 P3", "FX 5 Mix",
+        "FX 6 P1", "FX 6 P2", "FX 6 P3", "FX 6 Mix",
+        "FX 7 P1", "FX 7 P2", "FX 7 P3", "FX 7 Mix",
+        "FX 8 P1", "FX 8 P2", "FX 8 P3", "FX 8 Mix",
+        "FX 9 P1", "FX 9 P2", "FX 9 P3", "FX 9 Mix",
+        "FX 10 P1", "FX 10 P2", "FX 10 P3", "FX 10 Mix",
+        "FX 11 P1", "FX 11 P2", "FX 11 P3", "FX 11 Mix",
+        "FX 12 P1", "FX 12 P2", "FX 12 P3", "FX 12 Mix",
+        "FX 13 P1", "FX 13 P2", "FX 13 P3", "FX 13 Mix",
+        "FX 14 P1", "FX 14 P2", "FX 14 P3", "FX 14 Mix",
+        "FX 15 P1", "FX 15 P2", "FX 15 P3", "FX 15 Mix",
+        "FX 16 P1", "FX 16 P2", "FX 16 P3", "FX 16 Mix",
     ];
 
     pub fn from_param(v: f32) -> Self {
         Self::ALL[choice(v, DEST_COUNT)]
+    }
+
+    pub const fn fx_param(slot: usize, knob: usize) -> Self {
+        Self::ALL[28 + slot * 4 + knob]
     }
 
     pub fn scale(self) -> f32 {
