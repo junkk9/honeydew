@@ -1,5 +1,6 @@
 //! DewSerum: two-oscillator wavetable synth with Sub, Noise, Warp, Glide, 4 ADSR, 8 LFO, 4 Macros & 16-slot Matrix.
 
+pub mod fx;
 pub mod modulation;
 pub mod wavetable;
 
@@ -13,6 +14,10 @@ use crate::voice::{LFO_SYNC_BEATS, lfo_rate_hz, tempo_step};
 use modulation::{
     AdsrParams, CurvePreset, Envelope, Lfo, LfoCurve, LfoSettings, LfoTable, LfoTrig, ModDest,
     ModInputs, ModMatrix, SLOT_PARAMS, choice,
+};
+use fx::{
+    FX_KIND, FX_MIX, FX_ON, FX_P1, FX_P2, FX_P3, FX_SLOT_PARAMS, FX_SLOTS, FX_SUB, FxKind,
+    FxRack, SlotInputs,
 };
 use wavetable::{
     CUSTOM_MENU_INDEX, CustomTable, Reader, TABLE_MENU_COUNT, WavetableBank, bank,
@@ -273,6 +278,8 @@ pub mod param {
     pub const LFO_EXT_CURVE: usize = LFO_EXT_BASE + 4 * LFO_PARAMS; // 258..=401 (4 * 36)
     pub const MATRIX_EXT: usize = LFO_EXT_CURVE + 4 * CURVE_PARAMS; // 402..=425 (8 * 3)
     pub const MACRO_BASE: usize = MATRIX_EXT + 8 * SLOT_PARAMS; // 426..=429 (4)
+    pub const FX_BASE: usize = MACRO_BASE + 4; // 430..=541 (16 * 7)
+    pub const COUNT: usize = FX_BASE + 16 * 7; // 542
 
     pub const COUNT: usize = MACRO_BASE + 4; // 430
 
@@ -306,6 +313,10 @@ pub mod param {
 
     pub const fn macro_at(index: usize) -> usize {
         MACRO_BASE + index
+    pub const fn fx_at(slot: usize) -> usize {
+        FX_BASE + slot * 7
+    }
+    
     }
 }
 
