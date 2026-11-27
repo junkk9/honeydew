@@ -376,6 +376,10 @@ pub fn defaults() -> [f32; PARAM_COUNT] {
     for m in 0..MACRO_COUNT {
         p[macro_at(m)] = 0.0;
     }
+        for slot in 0..16 {
+        let at = fx_at(slot);
+        p[at..at + 7].copy_from_slice(&[0.0, 1.0, 0.0, 0.5, 0.5, 0.5, 0.5]);
+        }
     p[MASTER] = 0.7;
     p[VOICES] = 1.0;
     let default_curve = CurvePreset::Triangle.curve().to_params();
@@ -487,8 +491,8 @@ struct Control {
     voice_limit: usize,
     bend: f32,
     wheel: f32,
+    fx_slots: [SlotInputs; FX_SLOTS],
 }
-
 impl Control {
     fn build(p: &[f32; PARAM_COUNT], sample_rate: f32, bend: f32, wheel: f32) -> Self {
         let table_params = [param::OSC_A_TABLE, param::OSC_B_TABLE];
@@ -539,8 +543,22 @@ impl Control {
                 trig: LfoTrig::from_param(p[at + param::LFO_TRIG]),
             }
         });
-        let macros = std::array::from_fn(|m| p[param::macro_at(m)].clamp(0.0, 1.0));
-        Self {
+                let macros = std::array::from_fn(|m| p[param::macro_at(m)].clamp(0.0, 1.0));
+        let fx_slots = std::array::from_fn(|s| {
+            let at = param::fx_at(s);
+            SlotInputs {
+                kind: FxKind::from_param(p[at + FX_KIND]),
+                active: p[at + FX_ON] >= 0.5,
+                sub: p[at + FX_SUB].clamp(0.0, 1.0),
+                p1: p[at + FX_P1].clamp(0.0, 1.0),
+                p2: p[at + FX_P2].clamp(0.0, 1.0),
+                p3: p[at + FX_P3].clamp(0.0, 1.0),
+                mix: p[at + FX_MIX].clamp(0.0, 1.0),
+            }
+        });
+        Self {macros, fx_slots,}
+              
+            
             osc,
             fm_from_b: p[param::OSC_A_FM].clamp(0.0, 1.0),
             sub_shape: SubShape::from_param(p[param::SUB_SHAPE]),
@@ -1150,8 +1168,10 @@ pub struct DewSerum {
     master_step: f32,
     scope_ring: [f32; SCOPE_SAMPLES],
     scope_pos: usize,
-    analysis_buf: [f32; ANALYSIS_LEN],
-}
+    analysis_buf: [0.0; ANALYSIS_LEN],
+    fx_rack: FxRack::new(sample_rate),
+    fx_mod_inputs: control.fx_slots,
+        }
 
 impl DewSerum {
     pub fn new(sample_rate: f32) -> Self {
@@ -1271,7 +1291,46 @@ impl DewSerum {
                 voice.update(control, tables, lfos, bpm, rate, true);
             }
         }
-        self.master_step = (self.control.master - self.master_now) / TICK as f32;
+          self.master_step = (self.control.master - self.master_now) / TICK as f32;
+        let mut fx_now = self.control.fx_slots;
+        let active_v = if !self.voices[self.last_voice].env1.is_idle() {
+            Some(self.last_voice)
+        } else {
+            self.voices.iter().position(|v| !v.env1.is_idle())
+        };
+        let inputs = if let Some(idx) = active_v {
+            let v = &self.voices[idx];
+            ModInputs {
+                lfo: v.lfo_smooth,
+                env: [
+                    v.env1.level(),
+                    v.env_mod[0usize].level(),
+                    v.env_mod[1usize].level(),
+                    v.env_mod[2usize].level(),
+                ],
+                macros: self.control.macros,
+                velocity: v.velocity,
+                key: ModInputs::key_value(v.current_pitch),
+                wheel: self.control.wheel,
+            }
+        } else {
+            ModInputs {
+                macros: self.control.macros,
+                wheel: self.control.wheel,
+                ..ModInputs::default()
+            }
+        };
+        let fx_m = self.control.matrix.evaluate(&inputs);
+        for (s, slot) in fx_now.iter_mut().enumerate() {
+            if !slot.active || matches!(slot.kind, FxKind::Empty) {
+                continue;
+            }
+            slot.p1 = (slot.p1 + fx_m.get(ModDest::fx_param(s, 0))).clamp(0.0, 1.0);
+            slot.p2 = (slot.p2 + fx_m.get(ModDest::fx_param(s, 1))).clamp(0.0, 1.0);
+            slot.p3 = (slot.p3 + fx_m.get(ModDest::fx_param(s, 2))).clamp(0.0, 1.0);
+            slot.mix = (slot.mix + fx_m.get(ModDest::fx_param(s, 3))).clamp(0.0, 1.0);
+        }
+        self.fx_mod_inputs = fx_now;
     }
 
     fn pick_voice(&self, limit: usize) -> usize {
@@ -1355,6 +1414,8 @@ impl DewSerum {
             self.analysis_buf[base..base + vals.len()].copy_from_slice(&vals);
         } else {
             self.analysis_buf[SCOPE_SAMPLES..ANALYSIS_LEN].fill(0.0);
+            self.fx_rack.reset();
+            
         }
     }
 }
@@ -1413,6 +1474,7 @@ impl Instrument for DewSerum {
         self.master_step = 0.0;
         self.scope_ring.fill(0.0);
         self.analysis_buf.fill(0.0);
+        self.fx_rack.reset();!
     }
 
     fn process(&mut self, left: &mut [f32], right: &mut [f32], context: ProcessContext) {
@@ -1436,10 +1498,16 @@ impl Instrument for DewSerum {
                     voice.render(n, &self.control, &self.custom_tables, &mut self.rng, &mut mix);
                 }
             }
-            for i in 0..n {
+                        for i in 0..n {
+                let (fx_l, fx_r) = self.fx_rack.process_frame(
+                    mix[0usize][i],
+                    mix[1usize][i],
+                    &self.fx_mod_inputs,
+                    self.tempo_bpm,
+                );
                 self.master_now += self.master_step;
-                let out_l = mix[0usize][i] * self.master_now;
-                let out_r = mix[1usize][i] * self.master_now;
+                let out_l = fx_l * self.master_now;
+                let out_r = fx_r * self.master_now;
                 left[done + i] += out_l;
                 right[done + i] += out_r;
                 if (done + i) & 1 == 0 {
