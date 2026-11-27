@@ -26,9 +26,12 @@ pub enum FxKind {
     ChorusFlanger,
     Delay,
     Reverb,
+    Eq3,
+    CompOtt,
+    Convolver,
 }
 
-pub const FX_KIND_COUNT: usize = 7;
+pub const FX_KIND_COUNT: usize = 10;
 
 impl FxKind {
     pub const NAMES: [&'static str; FX_KIND_COUNT] = [
@@ -39,6 +42,9 @@ impl FxKind {
         "Chorus/Flng",
         "Delay",
         "Reverb",
+        "3-Band EQ",
+        "Comp / OTT",
+        "Convolver",
     ];
 
     pub fn from_param(v: f32) -> Self {
@@ -49,7 +55,10 @@ impl FxKind {
             3 => Self::Filter,
             4 => Self::ChorusFlanger,
             5 => Self::Delay,
-            _ => Self::Reverb,
+            6 => Self::Reverb,
+            7 => Self::Eq3,
+            8 => Self::CompOtt,
+            _ => Self::Convolver,
         }
     }
 }
@@ -556,6 +565,218 @@ impl ReverbFxState {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
+// 7. 3-Band EQ (Low Shelf + Mid Peak + High Shelf)
+// ---------------------------------------------------------------------------------------------------------------------
+
+#[derive(Default)]
+struct Eq3State {
+    low: [Biquad; 2],
+    mid: [Biquad; 2],
+    high: [Biquad; 2],
+}
+
+impl Eq3State {
+    fn reset(&mut self) {
+        for f in &mut self.low { f.reset(); }
+        for f in &mut self.mid { f.reset(); }
+        for f in &mut self.high { f.reset(); }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn process(&mut self, l: f32, r: f32, sub: f32, p1: f32, p2: f32, p3: f32, mix: f32, sr: f32) -> (f32, f32) {
+        let (f_low, f_mid, f_high) = match choice(sub, 3) {
+            0 => (120.0, 1000.0, 6500.0),
+            1 => (80.0, 600.0, 4500.0),
+            _ => (200.0, 2200.0, 9000.0),
+        };
+        let g_low = (p1.clamp(0.0, 1.0) * 2.0 - 1.0) * 15.0;
+        let g_mid = (p2.clamp(0.0, 1.0) * 2.0 - 1.0) * 15.0;
+        let g_high = (p3.clamp(0.0, 1.0) * 2.0 - 1.0) * 15.0;
+
+        let mut out = [l, r];
+        for ch in 0..2 {
+            self.low[ch].set_parametric_response(Response::LowShelf, f_low, 0.75, g_low, sr);
+            self.mid[ch].set_parametric_response(Response::Peak, f_mid, 1.1, g_mid, sr);
+            self.high[ch].set_parametric_response(Response::HighShelf, f_high, 0.75, g_high, sr);
+            let y = self.low[ch].process(out[ch]);
+            let y = self.mid[ch].process(y);
+            out[ch] = self.high[ch].process(y);
+        }
+        let m = mix.clamp(0.0, 1.0);
+        (l + (out[0usize] - l) * m, r + (out[1usize] - r) * m)
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// 8. Compressor / OTT 3-Band Multiband
+// ---------------------------------------------------------------------------------------------------------------------
+
+struct CompOttState {
+    lp_low: [Biquad; 2],
+    hp_high: [Biquad; 2],
+    env_single: [f32; 2],
+    env_bands: [[f32; 3]; 2],
+}
+
+impl CompOttState {
+    fn new() -> Self {
+        Self {
+            lp_low: [Biquad::default(); 2],
+            hp_high: [Biquad::default(); 2],
+            env_single: [0.0; 2],
+            env_bands: [[0.0; 3]; 2],
+        }
+    }
+
+    fn reset(&mut self) {
+        for f in &mut self.lp_low { f.reset(); }
+        for f in &mut self.hp_high { f.reset(); }
+        self.env_single = [0.0; 2];
+        self.env_bands = [[0.0; 3]; 2];
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn process(&mut self, l: f32, r: f32, sub: f32, p1: f32, p2: f32, p3: f32, mix: f32, sr: f32) -> (f32, f32) {
+        let is_ott = choice(sub, 2) == 1;
+        let out_gain = 0.5 + 2.5 * p3.clamp(0.0, 1.0);
+        let inputs = [l, r];
+        let mut outs = [l, r];
+
+        if !is_ott {
+            let thresh = 0.05 + 0.90 * (1.0 - p1.clamp(0.0, 1.0));
+            let ratio = 1.0 + 15.0 * p2.clamp(0.0, 1.0);
+            let att = 1.0 - (-1.0 / (0.005 * sr.max(1.0))).exp();
+            let rel = 1.0 - (-1.0 / (0.080 * sr.max(1.0))).exp();
+            for ch in 0..2 {
+                let x = inputs[ch];
+                let lvl = x.abs();
+                let coef = if lvl > self.env_single[ch] { att } else { rel };
+                self.env_single[ch] += (lvl - self.env_single[ch]) * coef;
+                let g = if self.env_single[ch] > thresh {
+                    (thresh + (self.env_single[ch] - thresh) / ratio) / self.env_single[ch].max(1e-6)
+                } else {
+                    1.0
+                };
+                outs[ch] = x * g * out_gain;
+            }
+        } else {
+            let depth = p1.clamp(0.0, 1.0);
+            let time_s = 0.008 + 0.140 * p2.clamp(0.0, 1.0);
+            let att = 1.0 - (-1.0 / (0.003 * sr.max(1.0))).exp();
+            let rel = 1.0 - (-1.0 / (time_s * sr.max(1.0))).exp();
+            let up_thresh = [0.16f32, 0.14, 0.12];
+            let dn_thresh = [0.38f32, 0.34, 0.30];
+
+            for ch in 0..2 {
+                let x = inputs[ch];
+                self.lp_low[ch].set_filter_response(Response::LowPass, 220.0, 0.707, sr);
+                self.hp_high[ch].set_filter_response(Response::HighPass, 2600.0, 0.707, sr);
+                let low = self.lp_low[ch].process(x);
+                let high = self.hp_high[ch].process(x);
+                let mid = x - low - high;
+                let bands = [low, mid, high];
+                let mut sum = 0.0f32;
+                for b in 0..3 {
+                    let lvl = bands[b].abs();
+                    let coef = if lvl > self.env_bands[ch][b] { att } else { rel };
+                    self.env_bands[ch][b] += (lvl - self.env_bands[ch][b]) * coef;
+                    let e = self.env_bands[ch][b].max(1e-4);
+                    let ott_g = if e > dn_thresh[b] {
+                        (dn_thresh[b] + (e - dn_thresh[b]) * 0.25) / e
+                    } else if e < up_thresh[b] && e > 0.002 {
+                        (e + (up_thresh[b] - e) * 0.55) / e
+                    } else {
+                        1.0
+                    };
+                    let g = 1.0 + (ott_g - 1.0) * depth;
+                    sum += bands[b] * g;
+                }
+                outs[ch] = (sum * out_gain).tanh();
+            }
+        }
+
+        let m = mix.clamp(0.0, 1.0);
+        (l + (outs[0usize] - l) * m, r + (outs[1usize] - r) * m)
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// 9. Convolver (5 built-in studio impulse responses: Room / Hall / Metal / Cab / Spring)
+// ---------------------------------------------------------------------------------------------------------------------
+
+struct ConvolverState {
+    buf: [Vec<f32>; 2],
+    pos: usize,
+    lp: [f32; 2],
+}
+
+impl ConvolverState {
+    fn new(sample_rate: f32) -> Self {
+        let len = ((sample_rate * 0.6) as usize).max(256);
+        Self {
+            buf: [vec![0.0; len], vec![0.0; len]],
+            pos: 0,
+            lp: [0.0; 2],
+        }
+    }
+
+    fn reset(&mut self) {
+        self.buf[0usize].fill(0.0);
+        self.buf[1usize].fill(0.0);
+        self.pos = 0;
+        self.lp = [0.0; 2];
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn process(&mut self, l: f32, r: f32, sub: f32, size: f32, tone: f32, damp: f32, mix: f32, sr: f32) -> (f32, f32) {
+        const TAPS_MS: [[f32; 8]; 5] = [
+            [4.2, 9.5, 16.0, 24.5, 35.0, 48.0, 63.0, 81.0],
+            [14.0, 29.0, 47.0, 72.0, 105.0, 148.0, 196.0, 255.0],
+            [1.8, 3.7, 6.1, 9.3, 13.5, 18.8, 25.1, 33.4],
+            [0.6, 1.3, 2.4, 3.9, 5.8, 8.2, 11.4, 15.6],
+            [11.0, 22.5, 34.0, 46.5, 59.0, 72.5, 86.0, 101.0],
+        ];
+        const GAINS: [[f32; 8]; 5] = [
+            [0.45, -0.38, 0.32, -0.26, 0.21, -0.16, 0.12, -0.08],
+            [0.40, 0.36, -0.31, 0.27, -0.23, 0.19, -0.15, 0.11],
+            [0.52, -0.49, 0.45, -0.41, 0.37, -0.33, 0.29, -0.25],
+            [0.58, -0.44, 0.33, -0.24, 0.17, -0.11, 0.07, -0.04],
+            [0.35, 0.42, -0.39, 0.36, -0.33, 0.29, -0.25, 0.20],
+        ];
+
+        let ir = choice(sub, 5);
+        let len = self.buf[0usize].len();
+        self.buf[0usize][self.pos] = l;
+        self.buf[1usize][self.pos] = r;
+
+        let scale = 0.35 + 1.45 * size.clamp(0.0, 1.0);
+        let damp_decay = 1.0 - 0.55 * damp.clamp(0.0, 1.0);
+        let mut wet_l = 0.0f32;
+        let mut wet_r = 0.0f32;
+        let mut decay_mul = 1.0f32;
+
+        for t in 0..8 {
+            let d_l = ((TAPS_MS[ir][t] * scale * 0.001 * sr) as usize).clamp(1, len - 1);
+            let d_r = (((TAPS_MS[ir][t] * 1.07 + 1.3) * scale * 0.001 * sr) as usize).clamp(1, len - 1);
+            let il = (self.pos + len - d_l) % len;
+            let ir_idx = (self.pos + len - d_r) % len;
+            let g = GAINS[ir][t] * decay_mul;
+            wet_l += self.buf[0usize][il] * g;
+            wet_r += self.buf[1usize][ir_idx] * g;
+            decay_mul *= damp_decay;
+        }
+
+        let alpha = (0.05 + 0.92 * tone.clamp(0.0, 1.0).powi(2)).clamp(0.02, 0.99);
+        self.lp[0usize] = flush(self.lp[0usize] + (wet_l - self.lp[0usize]) * alpha);
+        self.lp[1usize] = flush(self.lp[1usize] + (wet_r - self.lp[1usize]) * alpha);
+        self.pos = (self.pos + 1) % len;
+
+        let m = mix.clamp(0.0, 1.0);
+        (l + (self.lp[0usize] - l) * m, r + (self.lp[1usize] - r) * m)
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
 // 16-slot FX Rack
 // ---------------------------------------------------------------------------------------------------------------------
 
@@ -566,6 +787,9 @@ struct FxSlotState {
     chorus: ChorusFlangerState,
     delay: DelayFxState,
     reverb: ReverbFxState,
+    eq3: Eq3State,
+    comp: CompOttState,
+    conv: ConvolverState,
 }
 
 impl FxSlotState {
@@ -577,6 +801,9 @@ impl FxSlotState {
             chorus: ChorusFlangerState::new(sample_rate),
             delay: DelayFxState::new(sample_rate),
             reverb: ReverbFxState::new(sample_rate),
+            eq3: Eq3State::default(),
+            comp: CompOttState::new(),
+            conv: ConvolverState::new(sample_rate),
         }
     }
 
@@ -587,6 +814,9 @@ impl FxSlotState {
         self.chorus.reset();
         self.delay.reset();
         self.reverb.reset();
+        self.eq3.reset();
+        self.comp.reset();
+        self.conv.reset();
     }
 
     #[inline]
@@ -606,6 +836,9 @@ impl FxSlotState {
                 self.delay.process(l, r, in_s.sub, in_s.p1, in_s.p2, in_s.p3, in_s.mix, tempo_bpm, sr)
             }
             FxKind::Reverb => self.reverb.process(l, r, in_s.p1, in_s.p2, in_s.p3, in_s.mix),
+            FxKind::Eq3 => self.eq3.process(l, r, in_s.sub, in_s.p1, in_s.p2, in_s.p3, in_s.mix, sr),
+            FxKind::CompOtt => self.comp.process(l, r, in_s.sub, in_s.p1, in_s.p2, in_s.p3, in_s.mix, sr),
+            FxKind::Convolver => self.conv.process(l, r, in_s.sub, in_s.p1, in_s.p2, in_s.p3, in_s.mix, sr),
         }
     }
 }
