@@ -143,7 +143,7 @@ pub fn panel() -> Option<Panel> {
         matrix_page().show(Show::Tab(6)),
         fx_page().show(Show::Tab(7)),
         master_page().show(Show::Tab(8)),
-    ])))
+    ]))
 }
 
 fn osc_page(
